@@ -113,8 +113,8 @@ namespace AdaptiveMesh {
         std::vector<SpatialBridge> bridges;
         mutable std::mutex nodeMutex;
 
-        AutopoieticNode(int id, Vector3D pos, double initialBaseline)
-            : id(id), position(pos), state(initialBaseline) 
+        AutopoieticNode(size_t nodeId, Vector3D pos, double initialBaseline)
+            : id(nodeId), position(pos), state(initialBaseline) 
         {
             invariant.baseline = initialBaseline;
         }
