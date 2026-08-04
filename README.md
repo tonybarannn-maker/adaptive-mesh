@@ -1,6 +1,5 @@
 # Self-Organizing Adaptive Mesh (SOAM)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21796944.svg)](https://doi.org/10.5281/zenodo.21796944)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21796435.svg)](https://doi.org/10.5281/zenodo.21796435)
 [![CI](https://github.com/tonybarannn-maker/adaptive-mesh/actions/workflows/ci.yml/badge.svg)](https://github.com/tonybarannn-maker/adaptive-mesh/actions/workflows/ci.yml)
 [![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-AGPLv3-green.svg)](LICENSE)
