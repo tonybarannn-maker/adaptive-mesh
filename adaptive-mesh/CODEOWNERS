@@ -1,8 +1,0 @@
-# Global default owner
-*                   @my-org/maintainers
-
-# Specific critical components
-/include/           @my-org/core-architects
-/docs/              @my-org/maintainers
-/CMakeLists.txt     @my-org/maintainers
-/.github/workflows/ @my-org/devops
