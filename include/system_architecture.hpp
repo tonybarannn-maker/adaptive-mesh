@@ -103,7 +103,7 @@ namespace AdaptiveMesh {
 
     class AutopoieticNode {
     public:
-        int id;
+        size_t id;
         Vector3D position;
         std::atomic<double> state;
         std::atomic<double> healthIndex{1.0};
@@ -146,7 +146,7 @@ namespace AdaptiveMesh {
         double alpha = 0.15;
 
     public:
-        void addNode(int id, Vector3D pos, double baseline) {
+        void addNode(size_t id, Vector3D pos, double baseline) {
             nodes.emplace_back(id, pos, baseline);
         }
 
@@ -240,15 +240,15 @@ namespace AdaptiveMesh {
             }
         }
 
-        [[nodiscard]] double getNodeState(int id) const {
+        [[nodiscard]] double getNodeState(size_t id) const {
             return nodes.at(id).state.load();
         }
 
-        [[nodiscard]] double getNodeHealth(int id) const {
+        [[nodiscard]] double getNodeHealth(size_t id) const {
             return nodes.at(id).healthIndex.load();
         }
 
-        [[nodiscard]] size_t getNodeBridgesCount(int id) const {
+        [[nodiscard]] size_t getNodeBridgesCount(size_t id) const {
             return nodes.at(id).bridges.size();
         }
     };
