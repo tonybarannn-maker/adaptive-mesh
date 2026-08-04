@@ -1,4 +1,15 @@
 # Self-Organizing Adaptive Mesh (SOAM)
+## Highlights
+
+### Licensing
+- Added SOAM copyright attribution to GNU AGPLv3 license.
+- Confirmed AGPLv3 open-source licensing model.
+- Added commercial licensing contact information.
+
+### Verification
+- GPG signed release tag.
+- Verified author signature:
+  Mykola Bezruchko <tonybarannn@gmail.com>
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21796944.svg)](https://doi.org/10.5281/zenodo.21796944)
 [![CI](https://github.com/tonybarannn-maker/adaptive-mesh/actions/workflows/ci.yml/badge.svg)](https://github.com/tonybarannn-maker/adaptive-mesh/actions/workflows/ci.yml)
 [![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](CHANGELOG.md)
