@@ -1,0 +1,19 @@
+{
+  "title": "Self-Organizing Adaptive Mesh (SOAM)",
+  "version": "1.1.0",
+  "description": "A distributed graph diffusion framework with reflective control.",
+  "upload_type": "software",
+  "creators": [
+    {
+      "name": "Bezruchko, Mykola",
+      "orcid": "0009-0001-5666-4098"
+    }
+  ],
+  "access_right": "open",
+  "license": "AGPL-3.0-or-later",
+  "keywords": [
+    "graph diffusion",
+    "adaptive systems",
+    "reflective control"
+  ]
+}

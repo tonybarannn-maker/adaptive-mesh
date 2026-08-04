@@ -1,0 +1,13 @@
+# Automatic line ending normalization
+* text=auto eol=lf
+
+# Explicit text files
+*.cpp text diff=cpp
+*.hpp text diff=cpp
+*.md text diff=markdown
+*.sh text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.pdf binary
