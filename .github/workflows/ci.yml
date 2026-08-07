@@ -1,29 +1,47 @@
-name: C++20 Adaptive Mesh CI
+﻿name: C++20 Adaptive Mesh CI
 
 on:
   push:
-    branches: [ "main", "release/*" ]
+    branches: [ main ]
   pull_request:
-    branches: [ "main" ]
-
-# Principle of least privilege
-permissions:
-  contents: read
-  pull-requests: read
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
 
     steps:
-    # Note: Pinned SHAs should be reviewed and updated prior to each major release
-    - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 
-      
-    - name: Configure CMake
-      run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DSOAM_WARNINGS_AS_ERRORS=ON
+      - uses: actions/checkout@v4
 
-    - name: Build Project
-      run: cmake --build build --config Release
+      - name: Configure
+        run: >
+          cmake -B build -S .
+          -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_TESTS=ON
+          -DSOAM_WARNINGS_AS_ERRORS=ON
 
-    - name: Run Unit Tests
-      run: ctest --test-dir build --output-on-failure
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Run unit tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Verify evidence file exists
+        run: |
+          test -f results/runtime_trace.jsonl
+          test -s results/runtime_trace.jsonl
+
+      - name: Generate SHA-256 manifest
+        run: |
+          sha256sum results/runtime_trace.jsonl \
+            > results/verification_manifest.sha256
+
+      - name: Display manifest
+        run: cat results/verification_manifest.sha256
+
+      - name: Upload evidence artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidence
+          path: |
+            results/runtime_trace.jsonl
+            results/verification_manifest.sha256
