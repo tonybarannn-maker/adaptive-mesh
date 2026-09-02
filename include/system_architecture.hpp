@@ -215,6 +215,7 @@ namespace AdaptiveMesh {
         size_t readyWorkerCount = 0;
         std::vector<double>* dispatchedStates = nullptr;
         bool stoppingWorkers = false;
+        std::exception_ptr workerException;
 
         void validateNodeIndex(int nodeId) const {
             if (nodeId < 0 || nodeId >= static_cast<int>(nodes.size())) {
@@ -302,7 +303,19 @@ namespace AdaptiveMesh {
                 const size_t lastNode = (workerId + 1) * nodeCount / workerCount;
                 lock.unlock();
 
-                runNodeRange(firstNode, lastNode, *outputStates);
+                try {
+                    runNodeRange(firstNode, lastNode, *outputStates);
+                } catch (...) {
+                    lock.lock();
+                    if (!workerException) {
+                        workerException = std::current_exception();
+                    }
+                    ++completedWorkerCount;
+                    if (completedWorkerCount == activeWorkerCount) {
+                        workCompleted.notify_one();
+                    }
+                    continue;
+                }
 
                 lock.lock();
                 ++completedWorkerCount;
@@ -491,6 +504,7 @@ namespace AdaptiveMesh {
                 activeNodeCount = nodes.size();
                 activeWorkerCount = workers.size();
                 completedWorkerCount = 0;
+                workerException = nullptr;
                 dispatchedStates = &computedStates;
                 ++workGeneration;
             }
@@ -502,6 +516,12 @@ namespace AdaptiveMesh {
                     return completedWorkerCount == activeWorkerCount;
                 });
                 dispatchedStates = nullptr;
+                std::exception_ptr error = workerException;
+                workerException = nullptr;
+                workLock.unlock();
+                if (error) {
+                    std::rethrow_exception(error);
+                }
             }
 
             for (size_t i = 0; i < nodes.size(); ++i) {
