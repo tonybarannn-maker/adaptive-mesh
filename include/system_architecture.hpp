@@ -279,8 +279,8 @@ namespace AdaptiveMesh {
 
         void runNodeRange(size_t firstNode, size_t lastNode,
                           std::vector<double>& outputStates,
-                          std::vector<std::vector<double>>& pendingBridgeCapacities,
-                          std::vector<std::vector<BridgeStatus>>& pendingBridgeStatuses)
+                          std::vector<std::vector<double>>& bridgeCapacityOutput,
+                          std::vector<std::vector<BridgeStatus>>& bridgeStatusOutput)
         {
             for (size_t i = firstNode; i < lastNode; ++i) {
                 auto& node = nodes[i];
@@ -295,8 +295,8 @@ namespace AdaptiveMesh {
                         currentState + deltaS, node.healthIndex.load(), node.invariant);
                     SpatialBridge nextBridge = bridge;
                     nextBridge.updateBridgeState(category);
-                    pendingBridgeCapacities[i][bridgeIndex] = nextBridge.capacity;
-                    pendingBridgeStatuses[i][bridgeIndex] = nextBridge.status;
+                    bridgeCapacityOutput[i][bridgeIndex] = nextBridge.capacity;
+                    bridgeStatusOutput[i][bridgeIndex] = nextBridge.status;
                     diffusionSum += nextBridge.getEffectiveTransmission() * deltaS;
                 }
                 outputStates[i] = currentState + alpha * diffusionSum;
