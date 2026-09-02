@@ -22,22 +22,37 @@
 #include <atomic>
 #include <thread>
 #include <stdexcept>
+#include <string>
 
 namespace AdaptiveMesh {
+
+    inline void requireFinite(double value, const char* name) {
+        if (!std::isfinite(value)) {
+            throw std::invalid_argument(std::string{name} + " must be finite");
+        }
+    }
 
     struct Vector3D {
         double x = 0.0;
         double y = 0.0;
         double z = 0.0;
 
-        [[nodiscard]] double distanceTo(const Vector3D& other) const noexcept {
+        void validate() const {
+            requireFinite(x, "x");
+            requireFinite(y, "y");
+            requireFinite(z, "z");
+        }
+
+        [[nodiscard]] double distanceTo(const Vector3D& other) const {
+            validate();
+            other.validate();
             double dx = x - other.x;
             double dy = y - other.y;
             double dz = z - other.z;
             return std::sqrt(dx * dx + dy * dy + dz * dz);
         }
 
-        [[nodiscard]] double orientationFactorTo(const Vector3D& target) const noexcept {
+        [[nodiscard]] double orientationFactorTo(const Vector3D& target) const {
             double dist = distanceTo(target);
             if (dist < 1e-6) return 1.0;
             double cosTheta = (target.z - z) / dist;
@@ -49,7 +64,17 @@ namespace AdaptiveMesh {
         double baseline = 1.6180339887;
         double maxEpsilon = 10.0;
 
-        [[nodiscard]] bool isWithinSafetyBound(double state) const noexcept {
+        void validate() const {
+            requireFinite(baseline, "baseline");
+            requireFinite(maxEpsilon, "maxEpsilon");
+            if (maxEpsilon <= 0.0) {
+                throw std::invalid_argument("maxEpsilon must be positive");
+            }
+        }
+
+        [[nodiscard]] bool isWithinSafetyBound(double state) const {
+            validate();
+            requireFinite(state, "state");
             return std::abs(state - baseline) <= maxEpsilon;
         }
     };
@@ -61,8 +86,10 @@ namespace AdaptiveMesh {
     public:
         [[nodiscard]] SignalCategory evaluate(double candidateState,
                                               double healthIndex,
-                                              const IdentityInvariant& omega) const noexcept 
+                                              const IdentityInvariant& omega) const
         {
+            requireFinite(candidateState, "candidateState");
+            requireFinite(healthIndex, "healthIndex");
             if (!omega.isWithinSafetyBound(candidateState)) {
                 return SignalCategory::DESTRUCTIVE_DRIFT;
             }
@@ -81,8 +108,8 @@ namespace AdaptiveMesh {
         double capacity = 1.0;
         BridgeStatus status = BridgeStatus::NORMAL;
 
-        void updateBridgeState(double category) {
-            switch (static_cast<SignalCategory>(category)) {
+        void updateBridgeState(SignalCategory category) {
+            switch (category) {
                 case SignalCategory::NOISE:
                     capacity = std::max(0.01, capacity * 0.85);
                     status = BridgeStatus::DAMPING;
@@ -98,7 +125,10 @@ namespace AdaptiveMesh {
             }
         }
 
-        [[nodiscard]] double getEffectiveTransmission() const noexcept {
+        [[nodiscard]] double getEffectiveTransmission() const {
+            requireFinite(distance, "bridge distance");
+            requireFinite(orientationWeight, "bridge orientationWeight");
+            requireFinite(capacity, "bridge capacity");
             double spatialAttenuation = 1.0 / (1.0 + 0.1 * distance);
             return capacity * spatialAttenuation * orientationWeight;
         }
@@ -119,6 +149,8 @@ namespace AdaptiveMesh {
         AutopoieticNode(size_t nodeId, Vector3D pos, double initialBaseline)
             : id(nodeId), position(pos), state(initialBaseline) 
         {
+            position.validate();
+            requireFinite(initialBaseline, "baseline");
             invariant.baseline = initialBaseline;
         }
 
@@ -127,14 +159,19 @@ namespace AdaptiveMesh {
               healthIndex(other.healthIndex.load()), invariant(other.invariant),
               metaEvaluator(other.metaEvaluator), bridges(other.bridges) {}
 
-        void updateHealth() noexcept {
-            double drift = std::abs(state.load() - invariant.baseline);
+        void updateHealth() {
+            invariant.validate();
+            const double currentState = state.load();
+            requireFinite(currentState, "state");
+            double drift = std::abs(currentState - invariant.baseline);
             healthIndex.store(std::max(0.0, 1.0 - (drift / invariant.maxEpsilon)));
         }
 
-        [[nodiscard]] double applyLocalReflexFilter(double rawInput) const noexcept {
+        [[nodiscard]] double applyLocalReflexFilter(double rawInput) const {
+            requireFinite(rawInput, "rawInput");
             double maxAllowedReflexStep = 3.5;
             double currentState = state.load();
+            requireFinite(currentState, "state");
             double delta = rawInput - currentState;
             if (std::abs(delta) > maxAllowedReflexStep) {
                 return currentState + (delta > 0 ? maxAllowedReflexStep : -maxAllowedReflexStep);
@@ -219,7 +256,7 @@ namespace AdaptiveMesh {
                         currentState + deltaS, node.healthIndex.load(), node.invariant
                     );
 
-                    bridge.updateBridgeState(static_cast<double>(category));
+                    bridge.updateBridgeState(category);
                     diffusionSum += bridge.getEffectiveTransmission() * deltaS;
                 }
 
@@ -278,6 +315,46 @@ namespace AdaptiveMesh {
             workers.clear();
         }
 
+        void validateTopologyAndStateUnlocked() const {
+            if (!std::isfinite(alpha)) {
+                throw std::runtime_error("simulation alpha must be finite");
+            }
+            for (size_t sourceNodeId = 0; sourceNodeId < nodes.size(); ++sourceNodeId) {
+                const auto& node = nodes[sourceNodeId];
+                try {
+                    node.position.validate();
+                    node.invariant.validate();
+                    requireFinite(node.state.load(), "node state");
+                    requireFinite(node.healthIndex.load(), "node health");
+                } catch (const std::invalid_argument& error) {
+                    throw std::runtime_error(std::string{"invalid node invariant: "} + error.what());
+                }
+
+                for (const auto& bridge : node.bridges) {
+                    if (bridge.targetNodeId < 0 ||
+                        bridge.targetNodeId >= static_cast<int>(nodes.size()) ||
+                        bridge.targetNodeId == static_cast<int>(sourceNodeId)) {
+                        throw std::runtime_error("bridge target violates topology invariant");
+                    }
+                    if (!std::isfinite(bridge.distance) ||
+                        !std::isfinite(bridge.orientationWeight) ||
+                        !std::isfinite(bridge.capacity)) {
+                        throw std::runtime_error("bridge values must be finite");
+                    }
+                    const auto& counterpartBridges =
+                        nodes[static_cast<size_t>(bridge.targetNodeId)].bridges;
+                    const bool hasCounterpart = std::any_of(
+                        counterpartBridges.begin(), counterpartBridges.end(),
+                        [sourceNodeId](const SpatialBridge& candidate) {
+                            return candidate.targetNodeId == static_cast<int>(sourceNodeId);
+                        });
+                    if (!hasCounterpart) {
+                        throw std::runtime_error("bridge pair invariant is violated");
+                    }
+                }
+            }
+        }
+
     public:
         /**
          * maxWorkers limits reusable simulation workers. A value of zero selects
@@ -296,6 +373,8 @@ namespace AdaptiveMesh {
         SpatialAdaptiveMesh& operator=(SpatialAdaptiveMesh&&) = delete;
 
         void addNode(size_t id, Vector3D pos, double baseline) {
+            pos.validate();
+            requireFinite(baseline, "baseline");
             std::unique_lock lock(topologyMutex);
             nodes.emplace_back(id, pos, baseline);
         }
@@ -322,6 +401,10 @@ namespace AdaptiveMesh {
 
         /** Removes both directions of a bridge pair when either direction is isolated. */
         void pruneIsolatedBridges(double minCapacityThreshold = 0.05) {
+            requireFinite(minCapacityThreshold, "minCapacityThreshold");
+            if (minCapacityThreshold < 0.0) {
+                throw std::invalid_argument("minCapacityThreshold must not be negative");
+            }
             std::unique_lock lock(topologyMutex);
             const auto shouldPrune = [this, minCapacityThreshold](size_t sourceNodeId,
                                                                    const SpatialBridge& bridge) {
@@ -349,6 +432,10 @@ namespace AdaptiveMesh {
         }
 
         void autoConnectNearbyNodes(double radius) {
+            requireFinite(radius, "radius");
+            if (radius < 0.0) {
+                throw std::invalid_argument("radius must not be negative");
+            }
             std::unique_lock lock(topologyMutex);
             for (size_t i = 0; i < nodes.size(); ++i) {
                 for (size_t j = i + 1; j < nodes.size(); ++j) {
@@ -364,6 +451,7 @@ namespace AdaptiveMesh {
         }
 
         void injectExternalShock(int targetNodeId, double shockMagnitude) {
+            requireFinite(shockMagnitude, "shockMagnitude");
             std::unique_lock lock(topologyMutex);
             if (targetNodeId < 0 || targetNodeId >= static_cast<int>(nodes.size())) return;
             auto& node = nodes[targetNodeId];
@@ -374,6 +462,7 @@ namespace AdaptiveMesh {
 
         void simulationStepAsync() {
             std::unique_lock lock(topologyMutex);
+            validateTopologyAndStateUnlocked();
             ensureWorkerPoolUnlocked();
             std::vector<double> computedStates(nodes.size());
             if (computedStates.empty()) {
@@ -399,9 +488,13 @@ namespace AdaptiveMesh {
             }
 
             for (size_t i = 0; i < nodes.size(); ++i) {
+                if (!std::isfinite(computedStates[i])) {
+                    throw std::runtime_error("simulation produced a non-finite state");
+                }
                 nodes[i].state.store(computedStates[i]);
                 nodes[i].updateHealth();
             }
+            validateTopologyAndStateUnlocked();
         }
 
         [[nodiscard]] double getNodeState(size_t id) const {

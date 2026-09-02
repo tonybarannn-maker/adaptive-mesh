@@ -5,6 +5,7 @@
 #include <fstream>
 #include <filesystem>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 
 namespace {
@@ -50,6 +51,46 @@ void test_topology_contract() {
     mesh.pruneIsolatedBridges();
     require(mesh.getNodeBridgesCount(0) == 0, "pruning must remove forward bridge with its pair");
     require(mesh.getNodeBridgesCount(1) == 0, "pruning must remove reverse bridge with its pair");
+}
+
+void test_numeric_input_contract() {
+    using namespace AdaptiveMesh;
+
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const double infinity = std::numeric_limits<double>::infinity();
+    const double negativeInfinity = -std::numeric_limits<double>::infinity();
+    SpatialAdaptiveMesh mesh;
+
+    requireThrows<std::invalid_argument>([&mesh, nan] {
+        mesh.addNode(0, {nan, 0.0, 0.0}, 0.0);
+    }, "NaN coordinate must be rejected");
+    requireThrows<std::invalid_argument>([&mesh, infinity] {
+        mesh.addNode(0, {0.0, 0.0, 0.0}, infinity);
+    }, "infinite baseline must be rejected");
+
+    mesh.addNode(0, {0.0, 0.0, 0.0}, 0.0);
+    mesh.addNode(1, {1.0, 0.0, 0.0}, 0.0);
+    requireThrows<std::invalid_argument>([&mesh, nan] {
+        mesh.autoConnectNearbyNodes(nan);
+    }, "NaN radius must be rejected");
+    requireThrows<std::invalid_argument>([&mesh, infinity] {
+        mesh.injectExternalShock(0, infinity);
+    }, "infinite shock must be rejected");
+    requireThrows<std::invalid_argument>([&mesh, negativeInfinity] {
+        mesh.injectExternalShock(0, negativeInfinity);
+    }, "negative infinite shock must be rejected");
+    requireThrows<std::invalid_argument>([&mesh, nan] {
+        mesh.pruneIsolatedBridges(nan);
+    }, "NaN pruning threshold must be rejected");
+
+    SpatialBridge bridge{1, 1.0, 0.5};
+    bridge.updateBridgeState(SignalCategory::NOISE);
+    require(bridge.status == BridgeStatus::DAMPING,
+            "bridge state update must accept SignalCategory");
+    SpatialBridge invalidBridge{1, infinity, 0.5};
+    requireThrows<std::invalid_argument>([&invalidBridge] {
+        static_cast<void>(invalidBridge.getEffectiveTransmission());
+    }, "infinite bridge distance must be rejected");
 }
 
 void populateLinearMesh(AdaptiveMesh::SpatialAdaptiveMesh& mesh, size_t nodeCount) {
@@ -165,6 +206,7 @@ void test_stability_and_shock() {
 int main() {
     try {
         test_topology_contract();
+        test_numeric_input_contract();
         test_worker_configuration_is_deterministic();
         test_bounded_worker_scale_smoke(100);
         test_bounded_worker_scale_smoke(1000);
