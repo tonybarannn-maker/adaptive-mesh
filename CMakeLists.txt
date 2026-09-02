@@ -57,3 +57,12 @@ if(BUILD_TESTS)
         WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
     )
 endif()
+
+# ==============================================================================
+# Benchmarking
+# ==============================================================================
+option(BUILD_BENCHMARKS "Build performance benchmarks" ON)
+if(BUILD_BENCHMARKS)
+    add_executable(mesh_benchmark benchmarks/mesh_benchmark.cpp)
+    target_link_libraries(mesh_benchmark PRIVATE adaptive_mesh)
+endif()
