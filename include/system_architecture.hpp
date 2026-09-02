@@ -18,6 +18,7 @@
 #include <numeric>
 #include <mutex>
 #include <shared_mutex>
+#include <condition_variable>
 #include <atomic>
 #include <thread>
 #include <stdexcept>
@@ -152,6 +153,19 @@ namespace AdaptiveMesh {
         std::vector<AutopoieticNode> nodes;
         double alpha = 0.15;
         mutable std::shared_mutex topologyMutex;
+        const size_t workerLimit;
+        std::vector<std::jthread> workers;
+        std::mutex workMutex;
+        std::condition_variable workAvailable;
+        std::condition_variable workCompleted;
+        std::condition_variable workerReady;
+        size_t workGeneration = 0;
+        size_t activeNodeCount = 0;
+        size_t activeWorkerCount = 0;
+        size_t completedWorkerCount = 0;
+        size_t readyWorkerCount = 0;
+        std::vector<double>* dispatchedStates = nullptr;
+        bool stoppingWorkers = false;
 
         void validateNodeIndex(int nodeId) const {
             if (nodeId < 0 || nodeId >= static_cast<int>(nodes.size())) {
@@ -180,7 +194,107 @@ namespace AdaptiveMesh {
             enforceStabilityConditionUnlocked();
         }
 
+        [[nodiscard]] size_t resolveWorkerCountUnlocked() const noexcept {
+            if (nodes.empty()) {
+                return 0;
+            }
+            const size_t hardwareWorkers = std::max(
+                size_t{1}, static_cast<size_t>(std::thread::hardware_concurrency()));
+            const size_t requestedWorkers = workerLimit == 0 ? hardwareWorkers : workerLimit;
+            return std::min(requestedWorkers, nodes.size());
+        }
+
+        void runNodeRange(size_t firstNode, size_t lastNode, std::vector<double>& outputStates) {
+            for (size_t i = firstNode; i < lastNode; ++i) {
+                auto& node = nodes[i];
+                double diffusionSum = 0.0;
+                double currentState = node.state.load();
+
+                for (auto& bridge : node.bridges) {
+                    auto& neighbor = nodes[bridge.targetNodeId];
+                    double neighborState = neighbor.state.load();
+                    double deltaS = neighborState - currentState;
+
+                    SignalCategory category = node.metaEvaluator.evaluate(
+                        currentState + deltaS, node.healthIndex.load(), node.invariant
+                    );
+
+                    bridge.updateBridgeState(static_cast<double>(category));
+                    diffusionSum += bridge.getEffectiveTransmission() * deltaS;
+                }
+
+                outputStates[i] = currentState + alpha * diffusionSum;
+            }
+        }
+
+        void workerLoop(size_t workerId) {
+            std::unique_lock lock(workMutex);
+            size_t observedGeneration = workGeneration;
+            ++readyWorkerCount;
+            workerReady.notify_one();
+            while (true) {
+                workAvailable.wait(lock, [this, observedGeneration] {
+                    return stoppingWorkers || workGeneration != observedGeneration;
+                });
+                if (stoppingWorkers) {
+                    return;
+                }
+
+                observedGeneration = workGeneration;
+                const size_t workerCount = activeWorkerCount;
+                const size_t nodeCount = activeNodeCount;
+                auto* outputStates = dispatchedStates;
+                const size_t firstNode = workerId * nodeCount / workerCount;
+                const size_t lastNode = (workerId + 1) * nodeCount / workerCount;
+                lock.unlock();
+
+                runNodeRange(firstNode, lastNode, *outputStates);
+
+                lock.lock();
+                ++completedWorkerCount;
+                if (completedWorkerCount == activeWorkerCount) {
+                    workCompleted.notify_one();
+                }
+            }
+        }
+
+        void ensureWorkerPoolUnlocked() {
+            const size_t requiredWorkerCount = resolveWorkerCountUnlocked();
+            for (size_t workerId = workers.size(); workerId < requiredWorkerCount; ++workerId) {
+                workers.emplace_back([this, workerId] { workerLoop(workerId); });
+            }
+            std::unique_lock workLock(workMutex);
+            workerReady.wait(workLock, [this] {
+                return readyWorkerCount == workers.size();
+            });
+        }
+
+        void stopWorkerPool() noexcept {
+            {
+                std::lock_guard lock(workMutex);
+                stoppingWorkers = true;
+            }
+            workAvailable.notify_all();
+            workers.clear();
+        }
+
     public:
+        /**
+         * maxWorkers limits reusable simulation workers. A value of zero selects
+         * min(max(1, hardware_concurrency()), node_count) for each pool expansion.
+         */
+        explicit SpatialAdaptiveMesh(size_t maxWorkers = 0)
+            : workerLimit(maxWorkers) {}
+
+        ~SpatialAdaptiveMesh() {
+            stopWorkerPool();
+        }
+
+        SpatialAdaptiveMesh(const SpatialAdaptiveMesh&) = delete;
+        SpatialAdaptiveMesh& operator=(const SpatialAdaptiveMesh&) = delete;
+        SpatialAdaptiveMesh(SpatialAdaptiveMesh&&) = delete;
+        SpatialAdaptiveMesh& operator=(SpatialAdaptiveMesh&&) = delete;
+
         void addNode(size_t id, Vector3D pos, double baseline) {
             std::unique_lock lock(topologyMutex);
             nodes.emplace_back(id, pos, baseline);
@@ -260,37 +374,32 @@ namespace AdaptiveMesh {
 
         void simulationStepAsync() {
             std::unique_lock lock(topologyMutex);
-            std::vector<double> nextStates(nodes.size());
-            std::vector<std::jthread> workers;
-            workers.reserve(nodes.size());
-
-            for (size_t i = 0; i < nodes.size(); ++i) {
-                workers.emplace_back([this, i, &nextStates]() {
-                    auto& node = nodes[i];
-                    double diffusionSum = 0.0;
-                    double currentState = node.state.load();
-
-                    for (auto& bridge : node.bridges) {
-                        auto& neighbor = nodes[bridge.targetNodeId];
-                        double neighborState = neighbor.state.load();
-                        double deltaS = neighborState - currentState;
-
-                        SignalCategory category = node.metaEvaluator.evaluate(
-                            currentState + deltaS, node.healthIndex.load(), node.invariant
-                        );
-
-                        bridge.updateBridgeState(static_cast<double>(category));
-                        diffusionSum += bridge.getEffectiveTransmission() * deltaS;
-                    }
-
-                    nextStates[i] = currentState + alpha * diffusionSum;
-                });
+            ensureWorkerPoolUnlocked();
+            std::vector<double> computedStates(nodes.size());
+            if (computedStates.empty()) {
+                return;
             }
 
-            workers.clear(); // Waits for all threads to join
+            {
+                std::lock_guard workLock(workMutex);
+                activeNodeCount = nodes.size();
+                activeWorkerCount = workers.size();
+                completedWorkerCount = 0;
+                dispatchedStates = &computedStates;
+                ++workGeneration;
+            }
+            workAvailable.notify_all();
+
+            {
+                std::unique_lock workLock(workMutex);
+                workCompleted.wait(workLock, [this] {
+                    return completedWorkerCount == activeWorkerCount;
+                });
+                dispatchedStates = nullptr;
+            }
 
             for (size_t i = 0; i < nodes.size(); ++i) {
-                nodes[i].state.store(nextStates[i]);
+                nodes[i].state.store(computedStates[i]);
                 nodes[i].updateHealth();
             }
         }

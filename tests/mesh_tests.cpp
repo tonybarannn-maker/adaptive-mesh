@@ -52,6 +52,71 @@ void test_topology_contract() {
     require(mesh.getNodeBridgesCount(1) == 0, "pruning must remove reverse bridge with its pair");
 }
 
+void populateLinearMesh(AdaptiveMesh::SpatialAdaptiveMesh& mesh, size_t nodeCount) {
+    for (size_t nodeId = 0; nodeId < nodeCount; ++nodeId) {
+        mesh.addNode(nodeId, {static_cast<double>(nodeId), 0.0, 0.0}, 0.0);
+    }
+    for (size_t nodeId = 1; nodeId < nodeCount; ++nodeId) {
+        mesh.connectNodes(static_cast<int>(nodeId - 1), static_cast<int>(nodeId));
+    }
+}
+
+void test_worker_configuration_is_deterministic() {
+    using namespace AdaptiveMesh;
+
+    SpatialAdaptiveMesh singleWorkerMesh(1);
+    SpatialAdaptiveMesh multiWorkerMesh(2);
+    populateLinearMesh(singleWorkerMesh, 3);
+    populateLinearMesh(multiWorkerMesh, 3);
+    singleWorkerMesh.injectExternalShock(0, 2.0);
+    multiWorkerMesh.injectExternalShock(0, 2.0);
+    singleWorkerMesh.simulationStepAsync();
+    multiWorkerMesh.simulationStepAsync();
+
+    for (size_t nodeId = 0; nodeId < 3; ++nodeId) {
+        require(std::abs(singleWorkerMesh.getNodeState(nodeId) -
+                         multiWorkerMesh.getNodeState(nodeId)) < 1e-12,
+                "worker configuration must preserve node state");
+        require(std::abs(singleWorkerMesh.getNodeHealth(nodeId) -
+                         multiWorkerMesh.getNodeHealth(nodeId)) < 1e-12,
+                "worker configuration must preserve node health");
+        require(singleWorkerMesh.getNodeBridgesCount(nodeId) ==
+                    multiWorkerMesh.getNodeBridgesCount(nodeId),
+                "worker configuration must preserve topology");
+    }
+}
+
+void test_bounded_worker_scale_smoke(size_t nodeCount) {
+    using namespace AdaptiveMesh;
+
+    SpatialAdaptiveMesh mesh(4);
+    populateLinearMesh(mesh, nodeCount);
+    mesh.injectExternalShock(0, 2.0);
+    mesh.simulationStepAsync();
+
+    require(std::isfinite(mesh.getNodeState(0)), "scaled simulation state must be finite");
+    require(mesh.getNodeBridgesCount(nodeCount / 2) == 2,
+            "scaled simulation must preserve interior topology");
+}
+
+void test_worker_pool_expands_between_steps() {
+    using namespace AdaptiveMesh;
+
+    SpatialAdaptiveMesh mesh(4);
+    mesh.addNode(0, {0.0, 0.0, 0.0}, 0.0);
+    mesh.simulationStepAsync();
+
+    mesh.addNode(1, {1.0, 0.0, 0.0}, 0.0);
+    mesh.addNode(2, {2.0, 0.0, 0.0}, 0.0);
+    mesh.connectNodes(0, 1);
+    mesh.connectNodes(1, 2);
+    mesh.injectExternalShock(0, 2.0);
+    mesh.simulationStepAsync();
+
+    require(std::isfinite(mesh.getNodeState(0)),
+            "expanded worker pool must complete a simulation step");
+}
+
 void test_stability_and_shock() {
     using namespace AdaptiveMesh;
 
@@ -100,6 +165,10 @@ void test_stability_and_shock() {
 int main() {
     try {
         test_topology_contract();
+        test_worker_configuration_is_deterministic();
+        test_bounded_worker_scale_smoke(100);
+        test_bounded_worker_scale_smoke(1000);
+        test_worker_pool_expands_between_steps();
         test_stability_and_shock();
         std::cout << "Adaptive Mesh smoke test passed." << std::endl;
         return 0;
