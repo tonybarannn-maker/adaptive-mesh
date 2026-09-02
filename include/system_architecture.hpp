@@ -17,24 +17,54 @@
 #include <algorithm>
 #include <numeric>
 #include <mutex>
+#include <shared_mutex>
+#include <condition_variable>
 #include <atomic>
 #include <thread>
+#include <stdexcept>
+#include <string>
 
 namespace AdaptiveMesh {
+
+    inline void requireFinite(double value, const char* name) {
+        if (!std::isfinite(value)) {
+            throw std::invalid_argument(std::string{name} + " must be finite");
+        }
+    }
 
     struct Vector3D {
         double x = 0.0;
         double y = 0.0;
         double z = 0.0;
 
-        [[nodiscard]] double distanceTo(const Vector3D& other) const noexcept {
-            double dx = x - other.x;
-            double dy = y - other.y;
-            double dz = z - other.z;
-            return std::sqrt(dx * dx + dy * dy + dz * dz);
+        void validate() const {
+            requireFinite(x, "x");
+            requireFinite(y, "y");
+            requireFinite(z, "z");
         }
 
-        [[nodiscard]] double orientationFactorTo(const Vector3D& target) const noexcept {
+        [[nodiscard]] double distanceTo(const Vector3D& other) const {
+            validate();
+            other.validate();
+
+            const double dx = x - other.x;
+            const double dy = y - other.y;
+            const double dz = z - other.z;
+
+            // Finite coordinates can still produce a non-finite difference
+            // when subtraction overflows (for example +DBL_MAX - (-DBL_MAX)).
+            requireFinite(dx, "distance dx");
+            requireFinite(dy, "distance dy");
+            requireFinite(dz, "distance dz");
+
+            const double distance =
+                std::hypot(std::hypot(dx, dy), dz);
+            requireFinite(distance, "distance");
+
+            return distance;
+        }
+
+        [[nodiscard]] double orientationFactorTo(const Vector3D& target) const {
             double dist = distanceTo(target);
             if (dist < 1e-6) return 1.0;
             double cosTheta = (target.z - z) / dist;
@@ -46,7 +76,17 @@ namespace AdaptiveMesh {
         double baseline = 1.6180339887;
         double maxEpsilon = 10.0;
 
-        [[nodiscard]] bool isWithinSafetyBound(double state) const noexcept {
+        void validate() const {
+            requireFinite(baseline, "baseline");
+            requireFinite(maxEpsilon, "maxEpsilon");
+            if (maxEpsilon <= 0.0) {
+                throw std::invalid_argument("maxEpsilon must be positive");
+            }
+        }
+
+        [[nodiscard]] bool isWithinSafetyBound(double state) const {
+            validate();
+            requireFinite(state, "state");
             return std::abs(state - baseline) <= maxEpsilon;
         }
     };
@@ -58,8 +98,10 @@ namespace AdaptiveMesh {
     public:
         [[nodiscard]] SignalCategory evaluate(double candidateState,
                                               double healthIndex,
-                                              const IdentityInvariant& omega) const noexcept 
+                                              const IdentityInvariant& omega) const
         {
+            requireFinite(candidateState, "candidateState");
+            requireFinite(healthIndex, "healthIndex");
             if (!omega.isWithinSafetyBound(candidateState)) {
                 return SignalCategory::DESTRUCTIVE_DRIFT;
             }
@@ -78,8 +120,8 @@ namespace AdaptiveMesh {
         double capacity = 1.0;
         BridgeStatus status = BridgeStatus::NORMAL;
 
-        void updateBridgeState(double category) {
-            switch (static_cast<SignalCategory>(category)) {
+        void updateBridgeState(SignalCategory category) {
+            switch (category) {
                 case SignalCategory::NOISE:
                     capacity = std::max(0.01, capacity * 0.85);
                     status = BridgeStatus::DAMPING;
@@ -95,9 +137,27 @@ namespace AdaptiveMesh {
             }
         }
 
-        [[nodiscard]] double getEffectiveTransmission() const noexcept {
-            double spatialAttenuation = 1.0 / (1.0 + 0.1 * distance);
-            return capacity * spatialAttenuation * orientationWeight;
+        [[nodiscard]] double getEffectiveTransmission() const {
+            requireFinite(distance, "bridge distance");
+            requireFinite(orientationWeight, "bridge orientationWeight");
+            requireFinite(capacity, "bridge capacity");
+
+            if (distance < 0.0) {
+                throw std::invalid_argument("bridge distance must be non-negative");
+            }
+            if (orientationWeight < 0.0 || orientationWeight > 1.0) {
+                throw std::invalid_argument("bridge orientationWeight must be in [0, 1]");
+            }
+            if (capacity < 0.0 || capacity > 1.0) {
+                throw std::invalid_argument("bridge capacity must be in [0, 1]");
+            }
+
+            const double spatialAttenuation = 1.0 / (1.0 + 0.1 * distance);
+            const double transmission =
+                capacity * spatialAttenuation * orientationWeight;
+
+            requireFinite(transmission, "effective transmission");
+            return transmission;
         }
     };
 
@@ -116,6 +176,8 @@ namespace AdaptiveMesh {
         AutopoieticNode(size_t nodeId, Vector3D pos, double initialBaseline)
             : id(nodeId), position(pos), state(initialBaseline) 
         {
+            position.validate();
+            requireFinite(initialBaseline, "baseline");
             invariant.baseline = initialBaseline;
         }
 
@@ -124,14 +186,19 @@ namespace AdaptiveMesh {
               healthIndex(other.healthIndex.load()), invariant(other.invariant),
               metaEvaluator(other.metaEvaluator), bridges(other.bridges) {}
 
-        void updateHealth() noexcept {
-            double drift = std::abs(state.load() - invariant.baseline);
+        void updateHealth() {
+            invariant.validate();
+            const double currentState = state.load();
+            requireFinite(currentState, "state");
+            double drift = std::abs(currentState - invariant.baseline);
             healthIndex.store(std::max(0.0, 1.0 - (drift / invariant.maxEpsilon)));
         }
 
-        [[nodiscard]] double applyLocalReflexFilter(double rawInput) const noexcept {
+        [[nodiscard]] double applyLocalReflexFilter(double rawInput) const {
+            requireFinite(rawInput, "rawInput");
             double maxAllowedReflexStep = 3.5;
             double currentState = state.load();
+            requireFinite(currentState, "state");
             double delta = rawInput - currentState;
             if (std::abs(delta) > maxAllowedReflexStep) {
                 return currentState + (delta > 0 ? maxAllowedReflexStep : -maxAllowedReflexStep);
@@ -140,28 +207,40 @@ namespace AdaptiveMesh {
         }
     };
 
+    /**
+     * All topology mutations and simulationStepAsync() are serialized against one
+     * topology snapshot. Read-only getters may run concurrently with each other,
+     * but wait for an active mutation or simulation step to finish.
+     */
     class SpatialAdaptiveMesh {
     private:
         std::vector<AutopoieticNode> nodes;
         double alpha = 0.15;
+        mutable std::shared_mutex topologyMutex;
+        const size_t workerLimit;
+        std::vector<std::jthread> workers;
+        std::mutex workMutex;
+        std::condition_variable workAvailable;
+        std::condition_variable workCompleted;
+        std::condition_variable workerReady;
+        size_t workGeneration = 0;
+        size_t activeNodeCount = 0;
+        size_t activeWorkerCount = 0;
+        size_t completedWorkerCount = 0;
+        size_t readyWorkerCount = 0;
+        std::vector<double>* dispatchedStates = nullptr;
+        std::vector<std::vector<double>>* dispatchedBridgeCapacities = nullptr;
+        std::vector<std::vector<BridgeStatus>>* dispatchedBridgeStatuses = nullptr;
+        bool stoppingWorkers = false;
+        std::exception_ptr workerException;
 
-    public:
-        void addNode(size_t id, Vector3D pos, double baseline) {
-            nodes.emplace_back(id, pos, baseline);
+        void validateNodeIndex(int nodeId) const {
+            if (nodeId < 0 || nodeId >= static_cast<int>(nodes.size())) {
+                throw std::out_of_range("node index is out of range");
+            }
         }
 
-        void connectNodes(int nodeA, int nodeB) {
-            double dist = nodes[nodeA].position.distanceTo(nodes[nodeB].position);
-            double orientA = nodes[nodeA].position.orientationFactorTo(nodes[nodeB].position);
-            double orientB = nodes[nodeB].position.orientationFactorTo(nodes[nodeA].position);
-
-            nodes[nodeA].bridges.push_back({nodeB, dist, orientA, 1.0, BridgeStatus::NORMAL});
-            nodes[nodeB].bridges.push_back({nodeA, dist, orientB, 1.0, BridgeStatus::NORMAL});
-            
-            enforceStabilityCondition();
-        }
-
-        void enforceStabilityCondition() noexcept {
+        void enforceStabilityConditionUnlocked() noexcept {
             size_t maxDegree = 0;
             for (const auto& node : nodes) {
                 maxDegree = std::max(maxDegree, node.bridges.size());
@@ -172,24 +251,268 @@ namespace AdaptiveMesh {
             }
         }
 
+        void connectNodesUnlocked(int nodeA, int nodeB) {
+            double dist = nodes[nodeA].position.distanceTo(nodes[nodeB].position);
+            double orientA = nodes[nodeA].position.orientationFactorTo(nodes[nodeB].position);
+            double orientB = nodes[nodeB].position.orientationFactorTo(nodes[nodeA].position);
+
+            // Reserve both sides before mutating either side. If the second reserve
+            // throws, bridge counts and values remain unchanged.
+            nodes[nodeA].bridges.reserve(nodes[nodeA].bridges.size() + 1);
+            nodes[nodeB].bridges.reserve(nodes[nodeB].bridges.size() + 1);
+
+            nodes[nodeA].bridges.push_back({nodeB, dist, orientA, 1.0, BridgeStatus::NORMAL});
+            nodes[nodeB].bridges.push_back({nodeA, dist, orientB, 1.0, BridgeStatus::NORMAL});
+            enforceStabilityConditionUnlocked();
+        }
+
+        [[nodiscard]] size_t resolveWorkerCountUnlocked() const noexcept {
+            if (nodes.empty()) {
+                return 0;
+            }
+            const size_t hardwareWorkers = std::max(
+                size_t{1}, static_cast<size_t>(std::thread::hardware_concurrency()));
+            const size_t requestedWorkers = workerLimit == 0 ? hardwareWorkers : workerLimit;
+            return std::min(requestedWorkers, nodes.size());
+        }
+
+        void runNodeRange(
+            size_t firstNode,
+            size_t lastNode,
+            std::vector<double>& outputStates,
+            std::vector<std::vector<double>>& pendingBridgeCapacities,
+            std::vector<std::vector<BridgeStatus>>& pendingBridgeStatuses)
+        {
+            for (size_t i = firstNode; i < lastNode; ++i) {
+                auto& node = nodes[i];
+                double diffusionSum = 0.0;
+                double currentState = node.state.load();
+
+                for (size_t bridgeIndex = 0; bridgeIndex < node.bridges.size(); ++bridgeIndex) {
+                    const auto& bridge = node.bridges[bridgeIndex];
+                    auto& neighbor = nodes[static_cast<size_t>(bridge.targetNodeId)];
+                    double neighborState = neighbor.state.load();
+                    double deltaS = neighborState - currentState;
+
+                    SignalCategory category = node.metaEvaluator.evaluate(
+                        currentState + deltaS, node.healthIndex.load(), node.invariant
+                    );
+
+                    SpatialBridge nextBridge = bridge;
+                    nextBridge.updateBridgeState(category);
+
+                    pendingBridgeCapacities[i][bridgeIndex] = nextBridge.capacity;
+                    pendingBridgeStatuses[i][bridgeIndex] = nextBridge.status;
+                    diffusionSum += nextBridge.getEffectiveTransmission() * deltaS;
+                }
+
+                outputStates[i] = currentState + alpha * diffusionSum;
+            }
+        }
+
+        void workerLoop(size_t workerId) {
+            std::unique_lock lock(workMutex);
+            size_t observedGeneration = workGeneration;
+            ++readyWorkerCount;
+            workerReady.notify_one();
+            while (true) {
+                workAvailable.wait(lock, [this, observedGeneration] {
+                    return stoppingWorkers || workGeneration != observedGeneration;
+                });
+                if (stoppingWorkers) {
+                    return;
+                }
+
+                observedGeneration = workGeneration;
+                const size_t workerCount = activeWorkerCount;
+                const size_t nodeCount = activeNodeCount;
+                auto* outputStates = dispatchedStates;
+                auto* bridgeCapacities = dispatchedBridgeCapacities;
+                auto* bridgeStatuses = dispatchedBridgeStatuses;
+                const size_t firstNode = workerId * nodeCount / workerCount;
+                const size_t lastNode = (workerId + 1) * nodeCount / workerCount;
+                lock.unlock();
+
+                try {
+                    runNodeRange(
+                        firstNode,
+                        lastNode,
+                        *outputStates,
+                        *bridgeCapacities,
+                        *bridgeStatuses
+                    );
+                } catch (...) {
+                    lock.lock();
+                    if (!workerException) {
+                        workerException = std::current_exception();
+                    }
+                    ++completedWorkerCount;
+                    if (completedWorkerCount == activeWorkerCount) {
+                        workCompleted.notify_one();
+                    }
+                    continue;
+                }
+
+                lock.lock();
+                ++completedWorkerCount;
+                if (completedWorkerCount == activeWorkerCount) {
+                    workCompleted.notify_one();
+                }
+            }
+        }
+
+        void ensureWorkerPoolUnlocked() {
+            const size_t requiredWorkerCount = resolveWorkerCountUnlocked();
+            for (size_t workerId = workers.size(); workerId < requiredWorkerCount; ++workerId) {
+                workers.emplace_back([this, workerId] { workerLoop(workerId); });
+            }
+            std::unique_lock workLock(workMutex);
+            workerReady.wait(workLock, [this] {
+                return readyWorkerCount == workers.size();
+            });
+        }
+
+        void stopWorkerPool() noexcept {
+            {
+                std::lock_guard lock(workMutex);
+                stoppingWorkers = true;
+            }
+            workAvailable.notify_all();
+            workers.clear();
+        }
+
+        void validateTopologyAndStateUnlocked() const {
+            if (!std::isfinite(alpha)) {
+                throw std::runtime_error("simulation alpha must be finite");
+            }
+            for (size_t sourceNodeId = 0; sourceNodeId < nodes.size(); ++sourceNodeId) {
+                const auto& node = nodes[sourceNodeId];
+                try {
+                    node.position.validate();
+                    node.invariant.validate();
+                    requireFinite(node.state.load(), "node state");
+                    requireFinite(node.healthIndex.load(), "node health");
+                } catch (const std::invalid_argument& error) {
+                    throw std::runtime_error(std::string{"invalid node invariant: "} + error.what());
+                }
+
+                for (const auto& bridge : node.bridges) {
+                    if (bridge.targetNodeId < 0 ||
+                        bridge.targetNodeId >= static_cast<int>(nodes.size()) ||
+                        bridge.targetNodeId == static_cast<int>(sourceNodeId)) {
+                        throw std::runtime_error("bridge target violates topology invariant");
+                    }
+                    if (!std::isfinite(bridge.distance) ||
+                        !std::isfinite(bridge.orientationWeight) ||
+                        !std::isfinite(bridge.capacity)) {
+                        throw std::runtime_error("bridge values must be finite");
+                    }
+                    const auto& counterpartBridges =
+                        nodes[static_cast<size_t>(bridge.targetNodeId)].bridges;
+                    const bool hasCounterpart = std::any_of(
+                        counterpartBridges.begin(), counterpartBridges.end(),
+                        [sourceNodeId](const SpatialBridge& candidate) {
+                            return candidate.targetNodeId == static_cast<int>(sourceNodeId);
+                        });
+                    if (!hasCounterpart) {
+                        throw std::runtime_error("bridge pair invariant is violated");
+                    }
+                }
+            }
+        }
+
+    public:
+        /**
+         * maxWorkers limits reusable simulation workers. A value of zero selects
+         * min(max(1, hardware_concurrency()), node_count) for each pool expansion.
+         */
+        explicit SpatialAdaptiveMesh(size_t maxWorkers = 0)
+            : workerLimit(maxWorkers) {}
+
+        ~SpatialAdaptiveMesh() {
+            stopWorkerPool();
+        }
+
+        SpatialAdaptiveMesh(const SpatialAdaptiveMesh&) = delete;
+        SpatialAdaptiveMesh& operator=(const SpatialAdaptiveMesh&) = delete;
+        SpatialAdaptiveMesh(SpatialAdaptiveMesh&&) = delete;
+        SpatialAdaptiveMesh& operator=(SpatialAdaptiveMesh&&) = delete;
+
+        void addNode(size_t id, Vector3D pos, double baseline) {
+            pos.validate();
+            requireFinite(baseline, "baseline");
+            std::unique_lock lock(topologyMutex);
+            if (id != nodes.size()) {
+                throw std::invalid_argument("node ID must match insertion index");
+            }
+            nodes.emplace_back(id, pos, baseline);
+        }
+
+        /**
+         * Creates one pair of directed bridges: nodeA -> nodeB and nodeB -> nodeA.
+         * @throws std::out_of_range when either index does not name an existing node.
+         * @throws std::invalid_argument when nodeA and nodeB are the same node.
+         */
+        void connectNodes(int nodeA, int nodeB) {
+            std::unique_lock lock(topologyMutex);
+            validateNodeIndex(nodeA);
+            validateNodeIndex(nodeB);
+            if (nodeA == nodeB) {
+                throw std::invalid_argument("self-connections are not allowed");
+            }
+            connectNodesUnlocked(nodeA, nodeB);
+        }
+
+        void enforceStabilityCondition() noexcept {
+            std::unique_lock lock(topologyMutex);
+            enforceStabilityConditionUnlocked();
+        }
+
+        /** Removes both directions of a bridge pair when either direction is isolated. */
         void pruneIsolatedBridges(double minCapacityThreshold = 0.05) {
+            requireFinite(minCapacityThreshold, "minCapacityThreshold");
+            if (minCapacityThreshold < 0.0) {
+                throw std::invalid_argument("minCapacityThreshold must not be negative");
+            }
+            std::unique_lock lock(topologyMutex);
+            const auto shouldPrune = [this, minCapacityThreshold](size_t sourceNodeId,
+                                                                   const SpatialBridge& bridge) {
+                const bool localIsInvalid = bridge.capacity < minCapacityThreshold ||
+                                            bridge.status == BridgeStatus::ISOLATED;
+                const auto& targetBridges = nodes[static_cast<size_t>(bridge.targetNodeId)].bridges;
+                const auto counterpart = std::find_if(
+                    targetBridges.begin(), targetBridges.end(),
+                    [sourceNodeId](const SpatialBridge& candidate) {
+                        return candidate.targetNodeId == static_cast<int>(sourceNodeId);
+                    });
+                const bool counterpartIsInvalid = counterpart == targetBridges.end() ||
+                                                   counterpart->capacity < minCapacityThreshold ||
+                                                   counterpart->status == BridgeStatus::ISOLATED;
+                return localIsInvalid || counterpartIsInvalid;
+            };
+
             for (auto& node : nodes) {
-                std::lock_guard<std::mutex> lock(node.nodeMutex);
-                std::erase_if(node.bridges, [minCapacityThreshold](const SpatialBridge& b) {
-                    return b.capacity < minCapacityThreshold || b.status == BridgeStatus::ISOLATED;
+                const size_t sourceNodeId = static_cast<size_t>(&node - nodes.data());
+                std::erase_if(node.bridges, [&shouldPrune, sourceNodeId](const SpatialBridge& bridge) {
+                    return shouldPrune(sourceNodeId, bridge);
                 });
             }
-            enforceStabilityCondition();
+            enforceStabilityConditionUnlocked();
         }
 
         void autoConnectNearbyNodes(double radius) {
+            requireFinite(radius, "radius");
+            if (radius < 0.0) {
+                throw std::invalid_argument("radius must not be negative");
+            }
+            std::unique_lock lock(topologyMutex);
             for (size_t i = 0; i < nodes.size(); ++i) {
                 for (size_t j = i + 1; j < nodes.size(); ++j) {
                     if (nodes[i].position.distanceTo(nodes[j].position) <= radius) {
                         bool exists = std::any_of(nodes[i].bridges.begin(), nodes[i].bridges.end(),
                             [j](const SpatialBridge& b) { return b.targetNodeId == static_cast<int>(j); });
                         if (!exists) {
-                            connectNodes(static_cast<int>(i), static_cast<int>(j));
+                            connectNodesUnlocked(static_cast<int>(i), static_cast<int>(j));
                         }
                     }
                 }
@@ -197,6 +520,8 @@ namespace AdaptiveMesh {
         }
 
         void injectExternalShock(int targetNodeId, double shockMagnitude) {
+            requireFinite(shockMagnitude, "shockMagnitude");
+            std::unique_lock lock(topologyMutex);
             if (targetNodeId < 0 || targetNodeId >= static_cast<int>(nodes.size())) return;
             auto& node = nodes[targetNodeId];
             double filteredSignal = node.applyLocalReflexFilter(node.state.load() + shockMagnitude);
@@ -205,50 +530,88 @@ namespace AdaptiveMesh {
         }
 
         void simulationStepAsync() {
-            std::vector<double> nextStates(nodes.size());
-            std::vector<std::jthread> workers;
-            workers.reserve(nodes.size());
+            std::unique_lock lock(topologyMutex);
+            validateTopologyAndStateUnlocked();
+            ensureWorkerPoolUnlocked();
+            std::vector<double> computedStates(nodes.size());
+            std::vector<std::vector<double>> pendingBridgeCapacities(nodes.size());
+            std::vector<std::vector<BridgeStatus>> pendingBridgeStatuses(nodes.size());
+            for (size_t nodeId = 0; nodeId < nodes.size(); ++nodeId) {
+                const size_t bridgeCount = nodes[nodeId].bridges.size();
+                pendingBridgeCapacities[nodeId].resize(bridgeCount);
+                pendingBridgeStatuses[nodeId].resize(bridgeCount);
+            }
+            if (computedStates.empty()) {
+                return;
+            }
 
-            for (size_t i = 0; i < nodes.size(); ++i) {
-                workers.emplace_back([this, i, &nextStates]() {
-                    auto& node = nodes[i];
-                    double diffusionSum = 0.0;
-                    double currentState = node.state.load();
+            {
+                std::lock_guard workLock(workMutex);
+                activeNodeCount = nodes.size();
+                activeWorkerCount = workers.size();
+                completedWorkerCount = 0;
+                workerException = nullptr;
+                dispatchedStates = &computedStates;
+                dispatchedBridgeCapacities = &pendingBridgeCapacities;
+                dispatchedBridgeStatuses = &pendingBridgeStatuses;
+                ++workGeneration;
+            }
+            workAvailable.notify_all();
 
-                    for (auto& bridge : node.bridges) {
-                        auto& neighbor = nodes[bridge.targetNodeId];
-                        double neighborState = neighbor.state.load();
-                        double deltaS = neighborState - currentState;
-
-                        SignalCategory category = node.metaEvaluator.evaluate(
-                            currentState + deltaS, node.healthIndex.load(), node.invariant
-                        );
-
-                        bridge.updateBridgeState(static_cast<double>(category));
-                        diffusionSum += bridge.getEffectiveTransmission() * deltaS;
-                    }
-
-                    nextStates[i] = currentState + alpha * diffusionSum;
+            {
+                std::unique_lock workLock(workMutex);
+                workCompleted.wait(workLock, [this] {
+                    return completedWorkerCount == activeWorkerCount;
                 });
+                dispatchedStates = nullptr;
+                dispatchedBridgeCapacities = nullptr;
+                dispatchedBridgeStatuses = nullptr;
+                std::exception_ptr error = workerException;
+                workerException = nullptr;
+                workLock.unlock();
+                if (error) {
+                    std::rethrow_exception(error);
+                }
             }
-
-            workers.clear(); // Waits for all threads to join
 
             for (size_t i = 0; i < nodes.size(); ++i) {
-                nodes[i].state.store(nextStates[i]);
-                nodes[i].updateHealth();
+                if (!std::isfinite(computedStates[i])) {
+                    throw std::runtime_error("simulation produced a non-finite state");
+                }
+                if (pendingBridgeCapacities[i].size() != nodes[i].bridges.size() ||
+                    pendingBridgeStatuses[i].size() != nodes[i].bridges.size()) {
+                    throw std::runtime_error("pending bridge state size mismatch");
+                }
+                for (size_t bridgeIndex = 0; bridgeIndex < nodes[i].bridges.size(); ++bridgeIndex) {
+                    if (!std::isfinite(pendingBridgeCapacities[i][bridgeIndex])) {
+                        throw std::runtime_error("simulation produced a non-finite bridge capacity");
+                    }
+                }
             }
+
+            for (size_t i = 0; i < nodes.size(); ++i) {
+                nodes[i].state.store(computedStates[i]);
+                nodes[i].updateHealth();
+                for (size_t bridgeIndex = 0; bridgeIndex < nodes[i].bridges.size(); ++bridgeIndex) {
+                    nodes[i].bridges[bridgeIndex].capacity = pendingBridgeCapacities[i][bridgeIndex];
+                    nodes[i].bridges[bridgeIndex].status = pendingBridgeStatuses[i][bridgeIndex];
+                }
+            }
+            validateTopologyAndStateUnlocked();
         }
 
         [[nodiscard]] double getNodeState(size_t id) const {
+            std::shared_lock lock(topologyMutex);
             return nodes.at(id).state.load();
         }
 
         [[nodiscard]] double getNodeHealth(size_t id) const {
+            std::shared_lock lock(topologyMutex);
             return nodes.at(id).healthIndex.load();
         }
 
         [[nodiscard]] size_t getNodeBridgesCount(size_t id) const {
+            std::shared_lock lock(topologyMutex);
             return nodes.at(id).bridges.size();
         }
     };

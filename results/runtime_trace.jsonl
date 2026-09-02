@@ -1,5 +1,0 @@
-﻿{"timestamp":"2026-08-07T18:40:00Z","event":"test_start","topology":"BA(1000)","seed":42}
-{"timestamp":"2026-08-07T18:40:01Z","step":10,"event":"shock_injection","target_node":0,"magnitude":25.0}
-{"timestamp":"2026-08-07T18:40:01Z","step":11,"event":"isolation_cascade","isolated_bridges":3,"R_iso":0.05}
-{"timestamp":"2026-08-07T18:40:05Z","step":45,"event":"stabilization","H_sys":0.92,"T_rec":35}
-{"timestamp":"2026-08-07T18:40:05Z","event":"test_complete","status":"PASS"}

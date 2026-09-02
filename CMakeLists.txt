@@ -50,4 +50,7 @@ if(BUILD_TESTS)
     add_executable(mesh_tests tests/mesh_tests.cpp)
     target_link_libraries(mesh_tests PRIVATE adaptive_mesh)
     add_test(NAME run_mesh_tests COMMAND mesh_tests)
+    set_tests_properties(run_mesh_tests PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+    )
 endif()

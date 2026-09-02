@@ -1,20 +1,13 @@
 # Reproducibility Specification
 
-To ensure exact reproducibility of the benchmark results provided in `docs/diagrams/`, experiments must be executed under controlled environment conditions.
+The current reference implementation is a header-only C++20 library built with CMake 3.25 or newer. The CI workflow configures a Release build with warnings as errors and separately runs a Debug AddressSanitizer/UndefinedBehaviorSanitizer build on Ubuntu.
 
-## Experimental Environment Setup
+## Runtime configuration
 
-| Parameter | Reference Value / Toolchain |
-| :--- | :--- |
-| **Compiler** | `GCC 13.2.0` / `Clang 17.0.0` (C++20 flag enabled: `-std=c++20`) |
-| **Build System** | `CMake >= 3.25` (Release Build: `-O3 -DNDEBUG`) |
-| **Target OS** | `Linux x86_64` (Kernel 6.x or higher) |
-| **CPU Architecture** | 8 Cores / 16 Threads (e.g., AMD Zen 4 / Intel 13th Gen) |
-| **Thread Count** | Fixed via `SIMULATION_THREADS=8` |
-| **Random Seed** | Fixed explicit seed: `42` (`std::mt19937_64(42)`) |
+`SpatialAdaptiveMesh(maxWorkers)` controls the number of reusable simulation workers. `maxWorkers == 0` selects an automatic limit of `min(max(1, std::thread::hardware_concurrency()), node_count)`. A positive value is capped at `node_count`; workers receive deterministic index ranges for each step.
 
-## Topology Generation Parameters
-* **Erdős–Rényi:** $N = 1000, p = 0.005$
-* **Barabási–Albert:** $N = 1000, m = 3$
-* **Watts–Strogatz:** $N = 1000, k = 6, p = 0.1$
-* **Perturbation Model:** Single-node impulse shock at $t = 10$, magnitude $\Delta S = +5.0$.
+## Current reproducibility boundary
+
+The repository does not currently implement a random-number generator, a random seed, or Erdős–Rényi, Barabási–Albert, and Watts–Strogatz topology generators. It also does not provide a `SIMULATION_THREADS` environment setting. Reproducible runs therefore require callers to construct the same nodes and connections in the same order and to use the same `maxWorkers` configuration.
+
+The checked-in smoke test uses a three-node linear topology and a single external shock of `+2.0`; it validates finite state and health after one simulation step. The scale smoke tests use deterministic linear topologies with 100 and 1000 nodes.
