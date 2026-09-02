@@ -46,9 +46,21 @@ void test_topology_contract() {
     requireThrows<std::invalid_argument>([&mesh] { mesh.connectNodes(0, 0); },
                                           "self-connection must throw invalid_argument");
 
+    requireThrows<std::out_of_range>([&mesh] { mesh.injectExternalShock(-1, 1.0); },
+                                     "negative shock target must throw out_of_range");
+    requireThrows<std::out_of_range>([&mesh] { mesh.injectExternalShock(2, 1.0); },
+                                     "out-of-range shock target must throw out_of_range");
+
     mesh.connectNodes(0, 1);
     require(mesh.getNodeBridgesCount(0) == 1, "connection must create a forward bridge");
     require(mesh.getNodeBridgesCount(1) == 1, "connection must create a reverse bridge");
+
+    requireThrows<std::invalid_argument>([&mesh] { mesh.connectNodes(0, 1); },
+                                          "duplicate bridge pair must throw invalid_argument");
+    require(mesh.getNodeBridgesCount(0) == 1,
+            "duplicate connection must not add a second forward bridge");
+    require(mesh.getNodeBridgesCount(1) == 1,
+            "duplicate connection must not add a second reverse bridge");
 
     mesh.injectExternalShock(0, 25.0);
     mesh.injectExternalShock(0, 25.0);
