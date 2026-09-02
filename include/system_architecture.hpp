@@ -17,8 +17,10 @@
 #include <algorithm>
 #include <numeric>
 #include <mutex>
+#include <shared_mutex>
 #include <atomic>
 #include <thread>
+#include <stdexcept>
 
 namespace AdaptiveMesh {
 
@@ -140,28 +142,24 @@ namespace AdaptiveMesh {
         }
     };
 
+    /**
+     * All topology mutations and simulationStepAsync() are serialized against one
+     * topology snapshot. Read-only getters may run concurrently with each other,
+     * but wait for an active mutation or simulation step to finish.
+     */
     class SpatialAdaptiveMesh {
     private:
         std::vector<AutopoieticNode> nodes;
         double alpha = 0.15;
+        mutable std::shared_mutex topologyMutex;
 
-    public:
-        void addNode(size_t id, Vector3D pos, double baseline) {
-            nodes.emplace_back(id, pos, baseline);
+        void validateNodeIndex(int nodeId) const {
+            if (nodeId < 0 || nodeId >= static_cast<int>(nodes.size())) {
+                throw std::out_of_range("node index is out of range");
+            }
         }
 
-        void connectNodes(int nodeA, int nodeB) {
-            double dist = nodes[nodeA].position.distanceTo(nodes[nodeB].position);
-            double orientA = nodes[nodeA].position.orientationFactorTo(nodes[nodeB].position);
-            double orientB = nodes[nodeB].position.orientationFactorTo(nodes[nodeA].position);
-
-            nodes[nodeA].bridges.push_back({nodeB, dist, orientA, 1.0, BridgeStatus::NORMAL});
-            nodes[nodeB].bridges.push_back({nodeA, dist, orientB, 1.0, BridgeStatus::NORMAL});
-            
-            enforceStabilityCondition();
-        }
-
-        void enforceStabilityCondition() noexcept {
+        void enforceStabilityConditionUnlocked() noexcept {
             size_t maxDegree = 0;
             for (const auto& node : nodes) {
                 maxDegree = std::max(maxDegree, node.bridges.size());
@@ -172,24 +170,79 @@ namespace AdaptiveMesh {
             }
         }
 
+        void connectNodesUnlocked(int nodeA, int nodeB) {
+            double dist = nodes[nodeA].position.distanceTo(nodes[nodeB].position);
+            double orientA = nodes[nodeA].position.orientationFactorTo(nodes[nodeB].position);
+            double orientB = nodes[nodeB].position.orientationFactorTo(nodes[nodeA].position);
+
+            nodes[nodeA].bridges.push_back({nodeB, dist, orientA, 1.0, BridgeStatus::NORMAL});
+            nodes[nodeB].bridges.push_back({nodeA, dist, orientB, 1.0, BridgeStatus::NORMAL});
+            enforceStabilityConditionUnlocked();
+        }
+
+    public:
+        void addNode(size_t id, Vector3D pos, double baseline) {
+            std::unique_lock lock(topologyMutex);
+            nodes.emplace_back(id, pos, baseline);
+        }
+
+        /**
+         * Creates one pair of directed bridges: nodeA -> nodeB and nodeB -> nodeA.
+         * @throws std::out_of_range when either index does not name an existing node.
+         * @throws std::invalid_argument when nodeA and nodeB are the same node.
+         */
+        void connectNodes(int nodeA, int nodeB) {
+            std::unique_lock lock(topologyMutex);
+            validateNodeIndex(nodeA);
+            validateNodeIndex(nodeB);
+            if (nodeA == nodeB) {
+                throw std::invalid_argument("self-connections are not allowed");
+            }
+            connectNodesUnlocked(nodeA, nodeB);
+        }
+
+        void enforceStabilityCondition() noexcept {
+            std::unique_lock lock(topologyMutex);
+            enforceStabilityConditionUnlocked();
+        }
+
+        /** Removes both directions of a bridge pair when either direction is isolated. */
         void pruneIsolatedBridges(double minCapacityThreshold = 0.05) {
+            std::unique_lock lock(topologyMutex);
+            const auto shouldPrune = [this, minCapacityThreshold](size_t sourceNodeId,
+                                                                   const SpatialBridge& bridge) {
+                const bool localIsInvalid = bridge.capacity < minCapacityThreshold ||
+                                            bridge.status == BridgeStatus::ISOLATED;
+                const auto& targetBridges = nodes[static_cast<size_t>(bridge.targetNodeId)].bridges;
+                const auto counterpart = std::find_if(
+                    targetBridges.begin(), targetBridges.end(),
+                    [sourceNodeId](const SpatialBridge& candidate) {
+                        return candidate.targetNodeId == static_cast<int>(sourceNodeId);
+                    });
+                const bool counterpartIsInvalid = counterpart == targetBridges.end() ||
+                                                   counterpart->capacity < minCapacityThreshold ||
+                                                   counterpart->status == BridgeStatus::ISOLATED;
+                return localIsInvalid || counterpartIsInvalid;
+            };
+
             for (auto& node : nodes) {
-                std::lock_guard<std::mutex> lock(node.nodeMutex);
-                std::erase_if(node.bridges, [minCapacityThreshold](const SpatialBridge& b) {
-                    return b.capacity < minCapacityThreshold || b.status == BridgeStatus::ISOLATED;
+                const size_t sourceNodeId = static_cast<size_t>(&node - nodes.data());
+                std::erase_if(node.bridges, [&shouldPrune, sourceNodeId](const SpatialBridge& bridge) {
+                    return shouldPrune(sourceNodeId, bridge);
                 });
             }
-            enforceStabilityCondition();
+            enforceStabilityConditionUnlocked();
         }
 
         void autoConnectNearbyNodes(double radius) {
+            std::unique_lock lock(topologyMutex);
             for (size_t i = 0; i < nodes.size(); ++i) {
                 for (size_t j = i + 1; j < nodes.size(); ++j) {
                     if (nodes[i].position.distanceTo(nodes[j].position) <= radius) {
                         bool exists = std::any_of(nodes[i].bridges.begin(), nodes[i].bridges.end(),
                             [j](const SpatialBridge& b) { return b.targetNodeId == static_cast<int>(j); });
                         if (!exists) {
-                            connectNodes(static_cast<int>(i), static_cast<int>(j));
+                            connectNodesUnlocked(static_cast<int>(i), static_cast<int>(j));
                         }
                     }
                 }
@@ -197,6 +250,7 @@ namespace AdaptiveMesh {
         }
 
         void injectExternalShock(int targetNodeId, double shockMagnitude) {
+            std::unique_lock lock(topologyMutex);
             if (targetNodeId < 0 || targetNodeId >= static_cast<int>(nodes.size())) return;
             auto& node = nodes[targetNodeId];
             double filteredSignal = node.applyLocalReflexFilter(node.state.load() + shockMagnitude);
@@ -205,6 +259,7 @@ namespace AdaptiveMesh {
         }
 
         void simulationStepAsync() {
+            std::unique_lock lock(topologyMutex);
             std::vector<double> nextStates(nodes.size());
             std::vector<std::jthread> workers;
             workers.reserve(nodes.size());
@@ -241,14 +296,17 @@ namespace AdaptiveMesh {
         }
 
         [[nodiscard]] double getNodeState(size_t id) const {
+            std::shared_lock lock(topologyMutex);
             return nodes.at(id).state.load();
         }
 
         [[nodiscard]] double getNodeHealth(size_t id) const {
+            std::shared_lock lock(topologyMutex);
             return nodes.at(id).healthIndex.load();
         }
 
         [[nodiscard]] size_t getNodeBridgesCount(size_t id) const {
+            std::shared_lock lock(topologyMutex);
             return nodes.at(id).bridges.size();
         }
     };

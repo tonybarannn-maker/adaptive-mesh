@@ -15,6 +15,43 @@ void require(bool condition, const char* message) {
     }
 }
 
+template <typename Exception, typename Function>
+void requireThrows(Function&& function, const char* message) {
+    try {
+        function();
+    } catch (const Exception&) {
+        return;
+    }
+    throw std::runtime_error(message);
+}
+
+void test_topology_contract() {
+    using namespace AdaptiveMesh;
+
+    SpatialAdaptiveMesh mesh;
+    mesh.addNode(0, {0.0, 0.0, 0.0}, 0.0);
+    mesh.addNode(1, {1.0, 0.0, 0.0}, 0.0);
+
+    requireThrows<std::out_of_range>([&mesh] { mesh.connectNodes(-1, 0); },
+                                     "negative node ID must throw out_of_range");
+    requireThrows<std::out_of_range>([&mesh] { mesh.connectNodes(0, 2); },
+                                     "out-of-range node ID must throw out_of_range");
+    requireThrows<std::invalid_argument>([&mesh] { mesh.connectNodes(0, 0); },
+                                          "self-connection must throw invalid_argument");
+
+    mesh.connectNodes(0, 1);
+    require(mesh.getNodeBridgesCount(0) == 1, "connection must create a forward bridge");
+    require(mesh.getNodeBridgesCount(1) == 1, "connection must create a reverse bridge");
+
+    mesh.injectExternalShock(0, 25.0);
+    mesh.injectExternalShock(0, 25.0);
+    mesh.injectExternalShock(0, 25.0);
+    mesh.simulationStepAsync();
+    mesh.pruneIsolatedBridges();
+    require(mesh.getNodeBridgesCount(0) == 0, "pruning must remove forward bridge with its pair");
+    require(mesh.getNodeBridgesCount(1) == 0, "pruning must remove reverse bridge with its pair");
+}
+
 void test_stability_and_shock() {
     using namespace AdaptiveMesh;
 
@@ -62,6 +99,7 @@ void test_stability_and_shock() {
 
 int main() {
     try {
+        test_topology_contract();
         test_stability_and_shock();
         std::cout << "Adaptive Mesh smoke test passed." << std::endl;
         return 0;
