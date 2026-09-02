@@ -249,6 +249,8 @@ namespace AdaptiveMesh {
             if (maxDegree > 0) {
                 double safeAlpha = 1.0 / static_cast<double>(maxDegree);
                 alpha = std::min(0.2, safeAlpha * 0.8);
+            } else {
+                alpha = 0.15;
             }
         }
 
@@ -418,6 +420,15 @@ namespace AdaptiveMesh {
             validateNodeIndex(nodeA);
             validateNodeIndex(nodeB);
             if (nodeA == nodeB) throw std::invalid_argument("self-connections are not allowed");
+            const bool alreadyConnected = std::any_of(
+                nodes[static_cast<size_t>(nodeA)].bridges.begin(),
+                nodes[static_cast<size_t>(nodeA)].bridges.end(),
+                [nodeB](const SpatialBridge& bridge) {
+                    return bridge.targetNodeId == nodeB;
+                });
+            if (alreadyConnected) {
+                throw std::invalid_argument("bridge pair already exists");
+            }
             connectNodesUnlocked(nodeA, nodeB);
         }
 
@@ -524,8 +535,8 @@ namespace AdaptiveMesh {
         void injectExternalShock(int targetNodeId, double shockMagnitude) {
             requireFinite(shockMagnitude, "shockMagnitude");
             std::unique_lock lock(topologyMutex);
-            if (targetNodeId < 0 || targetNodeId >= static_cast<int>(nodes.size())) return;
-            auto& node = nodes[targetNodeId];
+            validateNodeIndex(targetNodeId);
+            auto& node = nodes[static_cast<size_t>(targetNodeId)];
             double filteredSignal = node.applyLocalReflexFilter(node.state.load() + shockMagnitude);
             node.state.store(filteredSignal);
             node.updateHealth();
