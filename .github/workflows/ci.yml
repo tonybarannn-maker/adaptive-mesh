@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  build-and-test:
+  release-build-and-test:
     runs-on: ubuntu-latest
 
     steps:
@@ -27,21 +27,40 @@ jobs:
 
       - name: Verify evidence file exists
         run: |
-          test -f results/runtime_trace.jsonl
-          test -s results/runtime_trace.jsonl
+          test -f build/results/runtime_trace.jsonl
+          test -s build/results/runtime_trace.jsonl
 
       - name: Generate SHA-256 manifest
         run: |
-          sha256sum results/runtime_trace.jsonl \
-            > results/verification_manifest.sha256
+          sha256sum build/results/runtime_trace.jsonl \
+            > build/results/verification_manifest.sha256
 
       - name: Display manifest
-        run: cat results/verification_manifest.sha256
+        run: cat build/results/verification_manifest.sha256
 
       - name: Upload evidence artifacts
         uses: actions/upload-artifact@v4
         with:
           name: evidence
           path: |
-            results/runtime_trace.jsonl
-            results/verification_manifest.sha256
+            build/results/runtime_trace.jsonl
+            build/results/verification_manifest.sha256
+
+  debug-sanitizers:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: >
+          cmake -B build-debug -S .
+          -DCMAKE_BUILD_TYPE=Debug
+          -DBUILD_TESTS=ON
+          -DSOAM_WARNINGS_AS_ERRORS=ON
+
+      - name: Build
+        run: cmake --build build-debug --config Debug
+
+      - name: Run tests with sanitizers
+        run: ctest --test-dir build-debug --output-on-failure
