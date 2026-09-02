@@ -226,6 +226,11 @@ namespace AdaptiveMesh {
             double orientA = nodes[nodeA].position.orientationFactorTo(nodes[nodeB].position);
             double orientB = nodes[nodeB].position.orientationFactorTo(nodes[nodeA].position);
 
+            // Reserve both sides before mutating either side. If the second reserve
+            // throws, bridge counts and values remain unchanged.
+            nodes[nodeA].bridges.reserve(nodes[nodeA].bridges.size() + 1);
+            nodes[nodeB].bridges.reserve(nodes[nodeB].bridges.size() + 1);
+
             nodes[nodeA].bridges.push_back({nodeB, dist, orientA, 1.0, BridgeStatus::NORMAL});
             nodes[nodeB].bridges.push_back({nodeA, dist, orientB, 1.0, BridgeStatus::NORMAL});
             enforceStabilityConditionUnlocked();
