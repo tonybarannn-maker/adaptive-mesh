@@ -232,6 +232,9 @@ namespace AdaptiveMesh {
         std::vector<double>* dispatchedStates = nullptr;
         std::vector<std::vector<double>>* dispatchedBridgeCapacities = nullptr;
         std::vector<std::vector<BridgeStatus>>* dispatchedBridgeStatuses = nullptr;
+        std::vector<double> computedStates;
+        std::vector<std::vector<double>> pendingBridgeCapacities;
+        std::vector<std::vector<BridgeStatus>> pendingBridgeStatuses;
         bool stoppingWorkers = false;
         std::exception_ptr workerException;
 
@@ -546,9 +549,9 @@ namespace AdaptiveMesh {
             std::unique_lock lock(topologyMutex);
             validateTopologyAndStateUnlocked();
             ensureWorkerPoolUnlocked();
-            std::vector<double> computedStates(nodes.size());
-            std::vector<std::vector<double>> pendingBridgeCapacities(nodes.size());
-            std::vector<std::vector<BridgeStatus>> pendingBridgeStatuses(nodes.size());
+            computedStates.resize(nodes.size());
+            pendingBridgeCapacities.resize(nodes.size());
+            pendingBridgeStatuses.resize(nodes.size());
             for (size_t nodeId = 0; nodeId < nodes.size(); ++nodeId) {
                 const size_t bridgeCount = nodes[nodeId].bridges.size();
                 pendingBridgeCapacities[nodeId].resize(bridgeCount);
