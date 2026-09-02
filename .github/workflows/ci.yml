@@ -64,3 +64,24 @@ jobs:
 
       - name: Run tests with sanitizers
         run: ctest --test-dir build-debug --output-on-failure
+
+  thread-sanitizer:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: >
+          cmake -B build-tsan -S .
+          -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_TESTS=ON
+          -DSOAM_WARNINGS_AS_ERRORS=ON
+          -DCMAKE_CXX_FLAGS=-fsanitize=thread
+          -DCMAKE_EXE_LINKER_FLAGS=-fsanitize=thread
+
+      - name: Build
+        run: cmake --build build-tsan --config Release
+
+      - name: Run tests with ThreadSanitizer
+        run: ctest --test-dir build-tsan --output-on-failure
