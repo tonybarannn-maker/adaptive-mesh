@@ -53,7 +53,7 @@ void test_topology_contract() {
     mesh.injectExternalShock(0, 25.0);
     mesh.injectExternalShock(0, 25.0);
     mesh.injectExternalShock(0, 25.0);
-    mesh.simulationStepAsync();
+    mesh.simulationStep();
     mesh.pruneIsolatedBridges();
     require(mesh.getNodeBridgesCount(0) == 0, "pruning must remove forward bridge with its pair");
     require(mesh.getNodeBridgesCount(1) == 0, "pruning must remove reverse bridge with its pair");
@@ -146,8 +146,8 @@ void test_worker_configuration_is_deterministic() {
     populateLinearMesh(multiWorkerMesh, 3);
     singleWorkerMesh.injectExternalShock(0, 2.0);
     multiWorkerMesh.injectExternalShock(0, 2.0);
-    singleWorkerMesh.simulationStepAsync();
-    multiWorkerMesh.simulationStepAsync();
+    singleWorkerMesh.simulationStep();
+    multiWorkerMesh.simulationStep();
 
     for (size_t nodeId = 0; nodeId < 3; ++nodeId) {
         require(std::abs(singleWorkerMesh.getNodeState(nodeId) -
@@ -162,13 +162,25 @@ void test_worker_configuration_is_deterministic() {
     }
 }
 
+void test_legacy_simulation_step_wrapper() {
+    using namespace AdaptiveMesh;
+
+    SpatialAdaptiveMesh mesh(1);
+    populateLinearMesh(mesh, 2);
+    mesh.injectExternalShock(0, 2.0);
+    mesh.simulationStepAsync();
+
+    require(std::isfinite(mesh.getNodeState(0)),
+            "legacy simulationStepAsync wrapper must complete synchronously");
+}
+
 void test_bounded_worker_scale_smoke(size_t nodeCount) {
     using namespace AdaptiveMesh;
 
     SpatialAdaptiveMesh mesh(4);
     populateLinearMesh(mesh, nodeCount);
     mesh.injectExternalShock(0, 2.0);
-    mesh.simulationStepAsync();
+    mesh.simulationStep();
 
     require(std::isfinite(mesh.getNodeState(0)), "scaled simulation state must be finite");
     require(mesh.getNodeBridgesCount(nodeCount / 2) == 2,
@@ -180,14 +192,14 @@ void test_worker_pool_expands_between_steps() {
 
     SpatialAdaptiveMesh mesh(4);
     mesh.addNode(0, {0.0, 0.0, 0.0}, 0.0);
-    mesh.simulationStepAsync();
+    mesh.simulationStep();
 
     mesh.addNode(1, {1.0, 0.0, 0.0}, 0.0);
     mesh.addNode(2, {2.0, 0.0, 0.0}, 0.0);
     mesh.connectNodes(0, 1);
     mesh.connectNodes(1, 2);
     mesh.injectExternalShock(0, 2.0);
-    mesh.simulationStepAsync();
+    mesh.simulationStep();
 
     require(std::isfinite(mesh.getNodeState(0)),
             "expanded worker pool must complete a simulation step");
@@ -213,7 +225,7 @@ void test_stability_and_shock() {
     require(mesh.getNodeHealth(0) < 1.0, "shock must reduce node health");
     assert(mesh.getNodeHealth(0) < 1.0);
 
-    mesh.simulationStepAsync();
+    mesh.simulationStep();
 
     const double stateAfterStep = mesh.getNodeState(0);
     const double healthAfterStep = mesh.getNodeHealth(0);
@@ -243,6 +255,7 @@ int main() {
         test_topology_contract();
         test_numeric_input_contract();
         test_worker_configuration_is_deterministic();
+        test_legacy_simulation_step_wrapper();
         test_bounded_worker_scale_smoke(100);
         test_bounded_worker_scale_smoke(1000);
         test_worker_pool_expands_between_steps();

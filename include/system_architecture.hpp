@@ -208,7 +208,7 @@ namespace AdaptiveMesh {
     };
 
     /**
-     * All topology mutations and simulationStepAsync() are serialized against one
+     * All topology mutations and simulation steps are serialized against one
      * topology snapshot. Read-only getters may run concurrently with each other,
      * but wait for an active mutation or simulation step to finish.
      */
@@ -529,7 +529,11 @@ namespace AdaptiveMesh {
             node.updateHealth();
         }
 
-        void simulationStepAsync() {
+        /**
+         * Execute exactly one simulation step and wait until it is complete.
+         * This is the canonical blocking simulation API.
+         */
+        void simulationStep() {
             std::unique_lock lock(topologyMutex);
             validateTopologyAndStateUnlocked();
             ensureWorkerPoolUnlocked();
@@ -598,6 +602,15 @@ namespace AdaptiveMesh {
                 }
             }
             validateTopologyAndStateUnlocked();
+        }
+
+        /**
+         * Legacy compatibility wrapper. Despite its historical name, this call
+         * is synchronous and blocks until the simulation step is complete.
+         * Use simulationStep() in new code.
+         */
+        void simulationStepAsync() {
+            simulationStep();
         }
 
         [[nodiscard]] double getNodeState(size_t id) const {
