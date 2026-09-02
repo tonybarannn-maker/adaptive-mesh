@@ -214,6 +214,8 @@ namespace AdaptiveMesh {
         size_t completedWorkerCount = 0;
         size_t readyWorkerCount = 0;
         std::vector<double>* dispatchedStates = nullptr;
+        std::vector<std::vector<double>>* dispatchedBridgeCapacities = nullptr;
+        std::vector<std::vector<BridgeStatus>>* dispatchedBridgeStatuses = nullptr;
         bool stoppingWorkers = false;
         std::exception_ptr workerException;
 
@@ -259,14 +261,21 @@ namespace AdaptiveMesh {
             return std::min(requestedWorkers, nodes.size());
         }
 
-        void runNodeRange(size_t firstNode, size_t lastNode, std::vector<double>& outputStates) {
+        void runNodeRange(
+            size_t firstNode,
+            size_t lastNode,
+            std::vector<double>& outputStates,
+            std::vector<std::vector<double>>& pendingBridgeCapacities,
+            std::vector<std::vector<BridgeStatus>>& pendingBridgeStatuses)
+        {
             for (size_t i = firstNode; i < lastNode; ++i) {
                 auto& node = nodes[i];
                 double diffusionSum = 0.0;
                 double currentState = node.state.load();
 
-                for (auto& bridge : node.bridges) {
-                    auto& neighbor = nodes[bridge.targetNodeId];
+                for (size_t bridgeIndex = 0; bridgeIndex < node.bridges.size(); ++bridgeIndex) {
+                    const auto& bridge = node.bridges[bridgeIndex];
+                    auto& neighbor = nodes[static_cast<size_t>(bridge.targetNodeId)];
                     double neighborState = neighbor.state.load();
                     double deltaS = neighborState - currentState;
 
@@ -274,8 +283,12 @@ namespace AdaptiveMesh {
                         currentState + deltaS, node.healthIndex.load(), node.invariant
                     );
 
-                    bridge.updateBridgeState(category);
-                    diffusionSum += bridge.getEffectiveTransmission() * deltaS;
+                    SpatialBridge nextBridge = bridge;
+                    nextBridge.updateBridgeState(category);
+
+                    pendingBridgeCapacities[i][bridgeIndex] = nextBridge.capacity;
+                    pendingBridgeStatuses[i][bridgeIndex] = nextBridge.status;
+                    diffusionSum += nextBridge.getEffectiveTransmission() * deltaS;
                 }
 
                 outputStates[i] = currentState + alpha * diffusionSum;
@@ -299,12 +312,20 @@ namespace AdaptiveMesh {
                 const size_t workerCount = activeWorkerCount;
                 const size_t nodeCount = activeNodeCount;
                 auto* outputStates = dispatchedStates;
+                auto* bridgeCapacities = dispatchedBridgeCapacities;
+                auto* bridgeStatuses = dispatchedBridgeStatuses;
                 const size_t firstNode = workerId * nodeCount / workerCount;
                 const size_t lastNode = (workerId + 1) * nodeCount / workerCount;
                 lock.unlock();
 
                 try {
-                    runNodeRange(firstNode, lastNode, *outputStates);
+                    runNodeRange(
+                        firstNode,
+                        lastNode,
+                        *outputStates,
+                        *bridgeCapacities,
+                        *bridgeStatuses
+                    );
                 } catch (...) {
                     lock.lock();
                     if (!workerException) {
@@ -495,6 +516,13 @@ namespace AdaptiveMesh {
             validateTopologyAndStateUnlocked();
             ensureWorkerPoolUnlocked();
             std::vector<double> computedStates(nodes.size());
+            std::vector<std::vector<double>> pendingBridgeCapacities(nodes.size());
+            std::vector<std::vector<BridgeStatus>> pendingBridgeStatuses(nodes.size());
+            for (size_t nodeId = 0; nodeId < nodes.size(); ++nodeId) {
+                const size_t bridgeCount = nodes[nodeId].bridges.size();
+                pendingBridgeCapacities[nodeId].resize(bridgeCount);
+                pendingBridgeStatuses[nodeId].resize(bridgeCount);
+            }
             if (computedStates.empty()) {
                 return;
             }
@@ -506,6 +534,8 @@ namespace AdaptiveMesh {
                 completedWorkerCount = 0;
                 workerException = nullptr;
                 dispatchedStates = &computedStates;
+                dispatchedBridgeCapacities = &pendingBridgeCapacities;
+                dispatchedBridgeStatuses = &pendingBridgeStatuses;
                 ++workGeneration;
             }
             workAvailable.notify_all();
@@ -516,6 +546,8 @@ namespace AdaptiveMesh {
                     return completedWorkerCount == activeWorkerCount;
                 });
                 dispatchedStates = nullptr;
+                dispatchedBridgeCapacities = nullptr;
+                dispatchedBridgeStatuses = nullptr;
                 std::exception_ptr error = workerException;
                 workerException = nullptr;
                 workLock.unlock();
@@ -528,8 +560,24 @@ namespace AdaptiveMesh {
                 if (!std::isfinite(computedStates[i])) {
                     throw std::runtime_error("simulation produced a non-finite state");
                 }
+                if (pendingBridgeCapacities[i].size() != nodes[i].bridges.size() ||
+                    pendingBridgeStatuses[i].size() != nodes[i].bridges.size()) {
+                    throw std::runtime_error("pending bridge state size mismatch");
+                }
+                for (size_t bridgeIndex = 0; bridgeIndex < nodes[i].bridges.size(); ++bridgeIndex) {
+                    if (!std::isfinite(pendingBridgeCapacities[i][bridgeIndex])) {
+                        throw std::runtime_error("simulation produced a non-finite bridge capacity");
+                    }
+                }
+            }
+
+            for (size_t i = 0; i < nodes.size(); ++i) {
                 nodes[i].state.store(computedStates[i]);
                 nodes[i].updateHealth();
+                for (size_t bridgeIndex = 0; bridgeIndex < nodes[i].bridges.size(); ++bridgeIndex) {
+                    nodes[i].bridges[bridgeIndex].capacity = pendingBridgeCapacities[i][bridgeIndex];
+                    nodes[i].bridges[bridgeIndex].status = pendingBridgeStatuses[i][bridgeIndex];
+                }
             }
             validateTopologyAndStateUnlocked();
         }
