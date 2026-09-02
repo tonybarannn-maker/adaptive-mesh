@@ -6,16 +6,14 @@
 
 `SpatialAdaptiveMesh::simulationStepAsync()` is retained as a compatibility wrapper for the 1.1 API. Despite its historical name, it is synchronous and blocks until the same simulation step is complete. New code should call `simulationStep()` to make this behavior explicit.
 
-A true non-blocking future-based API is intentionally not introduced yet. A safe asynchronous API must define object lifetime, cancellation, overlap, and error propagation semantics before exposing background work to callers.
+A true non-blocking future-based API is intentionally not introduced in this patch. A safe asynchronous API must define object lifetime, cancellation, overlap, and error propagation semantics before exposing background work to callers.
 
-## Ownership and encapsulation
+## Ownership and lifecycle
 
-`SpatialAdaptiveMesh` owns the node collection, topology, simulation buffers, worker pool, and synchronization state. These implementation details are intentionally private and are accessed through the mesh API rather than by callers.
+`SpatialAdaptiveMesh` owns its nodes, topology, reusable simulation buffers, and worker pool. Node and bridge storage is an implementation detail of the mesh; callers interact with that state through the mesh API.
 
-`AutopoieticNode` and `SpatialBridge` remain public value/helper types in the 1.1 API for compatibility. Their data members are therefore not made private in this maintenance patch. A future major-version API can introduce immutable views or accessor-based wrappers without silently breaking existing source code.
+The mesh is intentionally non-copyable and non-movable because its worker pool and synchronization state are tied to the owning object instance. Destroying a mesh stops the worker pool and joins its worker threads, so destruction can block until active worker callbacks finish.
 
-The mesh is non-copyable and non-movable. Its destructor stops and joins the internal `std::jthread` worker pool, so destruction may block briefly while workers finish. Callers should therefore avoid destroying a mesh while application code still depends on an in-flight operation.
+`AutopoieticNode` and `SpatialBridge` remain public value types for compatibility with the current 1.1 API. Their mutable public fields are therefore not yet a stable encapsulation boundary. A future breaking API revision may make their state private and expose validated accessors/mutators instead.
 
-## Validation contract
-
-Topology and numerical state are validated before and after each simulation step. Public mutation APIs reject invalid indices, non-finite numeric inputs, duplicate bridge pairs, and other states that would violate the mesh invariants.
+The current lifecycle contract permits only one owning mesh instance per object; callers should finish or destroy a mesh before allowing its associated worker pool to be torn down.
