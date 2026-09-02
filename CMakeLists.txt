@@ -53,6 +53,13 @@ if(BUILD_TESTS)
     set_tests_properties(run_mesh_tests PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
     )
+
+    add_executable(api_access_tests tests/api_access_tests.cpp)
+    target_link_libraries(api_access_tests PRIVATE adaptive_mesh)
+    add_test(NAME run_api_access_tests COMMAND api_access_tests)
+    set_tests_properties(run_api_access_tests PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+    )
 endif()
 
 # ==============================================================================
