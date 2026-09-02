@@ -25,6 +25,9 @@ jobs:
       - name: Run unit tests
         run: ctest --test-dir build --output-on-failure
 
+      - name: Run performance benchmark
+        run: ./build/mesh_benchmark 2 10 | tee build/benchmark.csv
+
       - name: Verify evidence file exists
         run: |
           test -f build/results/runtime_trace.jsonl
@@ -45,6 +48,12 @@ jobs:
           path: |
             build/results/runtime_trace.jsonl
             build/results/verification_manifest.sha256
+
+      - name: Upload benchmark artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark
+          path: build/benchmark.csv
 
   debug-sanitizers:
     runs-on: ubuntu-latest
