@@ -91,6 +91,35 @@ void test_numeric_input_contract() {
     requireThrows<std::invalid_argument>([&invalidBridge] {
         static_cast<void>(invalidBridge.getEffectiveTransmission());
     }, "infinite bridge distance must be rejected");
+
+    SpatialBridge negativeDistanceBridge{1, -1.0, 0.5};
+    requireThrows<std::invalid_argument>([&negativeDistanceBridge] {
+        static_cast<void>(negativeDistanceBridge.getEffectiveTransmission());
+    }, "negative bridge distance must be rejected");
+
+    SpatialBridge invalidOrientationLow{1, 1.0, -0.01};
+    requireThrows<std::invalid_argument>([&invalidOrientationLow] {
+        static_cast<void>(invalidOrientationLow.getEffectiveTransmission());
+    }, "negative bridge orientationWeight must be rejected");
+
+    SpatialBridge invalidOrientationHigh{1, 1.0, 1.01};
+    requireThrows<std::invalid_argument>([&invalidOrientationHigh] {
+        static_cast<void>(invalidOrientationHigh.getEffectiveTransmission());
+    }, "bridge orientationWeight above one must be rejected");
+
+    SpatialBridge invalidCapacityLow{1, 1.0, 0.5, -0.01};
+    requireThrows<std::invalid_argument>([&invalidCapacityLow] {
+        static_cast<void>(invalidCapacityLow.getEffectiveTransmission());
+    }, "negative bridge capacity must be rejected");
+
+    SpatialBridge invalidCapacityHigh{1, 1.0, 0.5, 1.01};
+    requireThrows<std::invalid_argument>([&invalidCapacityHigh] {
+        static_cast<void>(invalidCapacityHigh.getEffectiveTransmission());
+    }, "bridge capacity above one must be rejected");
+
+    SpatialBridge validBridge{1, 2.0, 0.5, 0.8};
+    const double transmission = validBridge.getEffectiveTransmission();
+    require(std::isfinite(transmission), "valid bridge transmission must be finite");
 }
 
 void populateLinearMesh(AdaptiveMesh::SpatialAdaptiveMesh& mesh, size_t nodeCount) {

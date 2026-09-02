@@ -141,8 +141,23 @@ namespace AdaptiveMesh {
             requireFinite(distance, "bridge distance");
             requireFinite(orientationWeight, "bridge orientationWeight");
             requireFinite(capacity, "bridge capacity");
-            double spatialAttenuation = 1.0 / (1.0 + 0.1 * distance);
-            return capacity * spatialAttenuation * orientationWeight;
+
+            if (distance < 0.0) {
+                throw std::invalid_argument("bridge distance must be non-negative");
+            }
+            if (orientationWeight < 0.0 || orientationWeight > 1.0) {
+                throw std::invalid_argument("bridge orientationWeight must be in [0, 1]");
+            }
+            if (capacity < 0.0 || capacity > 1.0) {
+                throw std::invalid_argument("bridge capacity must be in [0, 1]");
+            }
+
+            const double spatialAttenuation = 1.0 / (1.0 + 0.1 * distance);
+            const double transmission =
+                capacity * spatialAttenuation * orientationWeight;
+
+            requireFinite(transmission, "effective transmission");
+            return transmission;
         }
     };
 
