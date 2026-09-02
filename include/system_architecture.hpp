@@ -442,6 +442,9 @@ namespace AdaptiveMesh {
             pos.validate();
             requireFinite(baseline, "baseline");
             std::unique_lock lock(topologyMutex);
+            if (id != nodes.size()) {
+                throw std::invalid_argument("node ID must match insertion index");
+            }
             nodes.emplace_back(id, pos, baseline);
         }
 

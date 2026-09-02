@@ -31,6 +31,12 @@ void test_topology_contract() {
 
     SpatialAdaptiveMesh mesh;
     mesh.addNode(0, {0.0, 0.0, 0.0}, 0.0);
+
+    requireThrows<std::invalid_argument>(
+        [&mesh] { mesh.addNode(42, {1.0, 0.0, 0.0}, 0.0); },
+        "node ID must match insertion index"
+    );
+
     mesh.addNode(1, {1.0, 0.0, 0.0}, 0.0);
 
     requireThrows<std::out_of_range>([&mesh] { mesh.connectNodes(-1, 0); },
