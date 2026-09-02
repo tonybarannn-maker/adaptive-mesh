@@ -46,10 +46,22 @@ namespace AdaptiveMesh {
         [[nodiscard]] double distanceTo(const Vector3D& other) const {
             validate();
             other.validate();
-            double dx = x - other.x;
-            double dy = y - other.y;
-            double dz = z - other.z;
-            return std::sqrt(dx * dx + dy * dy + dz * dz);
+
+            const double dx = x - other.x;
+            const double dy = y - other.y;
+            const double dz = z - other.z;
+
+            // Finite coordinates can still produce a non-finite difference
+            // when subtraction overflows (for example +DBL_MAX - (-DBL_MAX)).
+            requireFinite(dx, "distance dx");
+            requireFinite(dy, "distance dy");
+            requireFinite(dz, "distance dz");
+
+            const double distance =
+                std::hypot(std::hypot(dx, dy), dz);
+            requireFinite(distance, "distance");
+
+            return distance;
         }
 
         [[nodiscard]] double orientationFactorTo(const Vector3D& target) const {
