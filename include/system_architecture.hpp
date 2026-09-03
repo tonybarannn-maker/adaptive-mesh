@@ -27,6 +27,10 @@
 #include <unordered_set>
 #include <utility>
 
+#ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
+#include <chrono>
+#endif
+
 namespace AdaptiveMesh {
 
     inline void requireFinite(double value, const char* name) {
@@ -198,6 +202,18 @@ namespace AdaptiveMesh {
         }
     };
 
+#ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
+    struct SimulationPhaseProfile {
+        double preValidationMicroseconds = 0.0;
+        double workerPoolReadyMicroseconds = 0.0;
+        double bufferPreparationMicroseconds = 0.0;
+        double workerDispatchWaitMicroseconds = 0.0;
+        double resultValidationMicroseconds = 0.0;
+        double commitMicroseconds = 0.0;
+        double postValidationMicroseconds = 0.0;
+    };
+#endif
+
     class SpatialAdaptiveMesh {
     private:
         using EdgeKey = std::pair<size_t, size_t>;
@@ -237,6 +253,9 @@ namespace AdaptiveMesh {
         std::vector<std::vector<BridgeStatus>> pendingBridgeStatuses;
         bool stoppingWorkers = false;
         std::exception_ptr workerException;
+#ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
+        SimulationPhaseProfile lastSimulationPhaseProfile{};
+#endif
 
         void validateNodeIndex(int nodeId) const {
             if (nodeId < 0 || nodeId >= static_cast<int>(nodes.size())) {
@@ -550,9 +569,21 @@ namespace AdaptiveMesh {
         }
 
         void simulationStep() {
+#ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
+            SimulationPhaseProfile profile{};
+            const auto preValidationStart = std::chrono::steady_clock::now();
+#endif
             std::unique_lock lock(topologyMutex);
             validateTopologyAndStateUnlocked();
+#ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
+            const auto workerPoolStart = std::chrono::steady_clock::now();
+            profile.preValidationMicroseconds = std::chrono::duration<double, std::micro>(workerPoolStart - preValidationStart).count();
+#endif
             ensureWorkerPoolUnlocked();
+#ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
+            const auto bufferPreparationStart = std::chrono::steady_clock::now();
+            profile.workerPoolReadyMicroseconds = std::chrono::duration<double, std::micro>(bufferPreparationStart - workerPoolStart).count();
+#endif
             computedStates.resize(nodes.size());
             pendingBridgeCapacities.resize(nodes.size());
             pendingBridgeStatuses.resize(nodes.size());
@@ -561,6 +592,10 @@ namespace AdaptiveMesh {
                 pendingBridgeCapacities[nodeId].resize(bridgeCount);
                 pendingBridgeStatuses[nodeId].resize(bridgeCount);
             }
+#ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
+            const auto dispatchStart = std::chrono::steady_clock::now();
+            profile.bufferPreparationMicroseconds = std::chrono::duration<double, std::micro>(dispatchStart - bufferPreparationStart).count();
+#endif
             if (computedStates.empty()) return;
             {
                 std::lock_guard workLock(workMutex);
@@ -575,8 +610,15 @@ namespace AdaptiveMesh {
             }
             workAvailable.notify_all();
             {
+#ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
+                const auto waitStart = std::chrono::steady_clock::now();
+#endif
                 std::unique_lock workLock(workMutex);
                 workCompleted.wait(workLock, [this] { return completedWorkerCount == activeWorkerCount; });
+#ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
+                const auto resultValidationStart = std::chrono::steady_clock::now();
+                profile.workerDispatchWaitMicroseconds = std::chrono::duration<double, std::micro>(resultValidationStart - waitStart).count();
+#endif
                 dispatchedStates = nullptr;
                 dispatchedBridgeCapacities = nullptr;
                 dispatchedBridgeStatuses = nullptr;
@@ -585,6 +627,9 @@ namespace AdaptiveMesh {
                 workLock.unlock();
                 if (error) std::rethrow_exception(error);
             }
+#ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
+            const auto resultValidationStart = std::chrono::steady_clock::now();
+#endif
             for (size_t i = 0; i < nodes.size(); ++i) {
                 if (!std::isfinite(computedStates[i])) throw std::runtime_error("simulation produced a non-finite state");
                 if (pendingBridgeCapacities[i].size() != nodes[i].bridges.size() ||
@@ -597,6 +642,10 @@ namespace AdaptiveMesh {
                     }
                 }
             }
+#ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
+            const auto commitStart = std::chrono::steady_clock::now();
+            profile.resultValidationMicroseconds = std::chrono::duration<double, std::micro>(commitStart - resultValidationStart).count();
+#endif
             for (size_t i = 0; i < nodes.size(); ++i) {
                 nodes[i].state.store(computedStates[i]);
                 nodes[i].updateHealth();
@@ -605,8 +654,24 @@ namespace AdaptiveMesh {
                     nodes[i].bridges[bridgeIndex].status = pendingBridgeStatuses[i][bridgeIndex];
                 }
             }
+#ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
+            const auto postValidationStart = std::chrono::steady_clock::now();
+            profile.commitMicroseconds = std::chrono::duration<double, std::micro>(postValidationStart - commitStart).count();
+#endif
             validateTopologyAndStateUnlocked();
+#ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
+            const auto profileEnd = std::chrono::steady_clock::now();
+            profile.postValidationMicroseconds = std::chrono::duration<double, std::micro>(profileEnd - postValidationStart).count();
+            lastSimulationPhaseProfile = profile;
+#endif
         }
+
+#ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
+        [[nodiscard]] SimulationPhaseProfile getLastSimulationPhaseProfile() const {
+            std::shared_lock lock(topologyMutex);
+            return lastSimulationPhaseProfile;
+        }
+#endif
 
         void simulationStepAsync() { simulationStep(); }
 
