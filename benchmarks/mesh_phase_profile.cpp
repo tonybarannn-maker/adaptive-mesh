@@ -75,6 +75,8 @@ void accumulate(PhaseTotals& totals, const AdaptiveMesh::SimulationPhaseProfile&
     totals.postValidationMicroseconds += profile.postValidationMicroseconds;
 }
 
+} // namespace
+
 int main() {
     try {
         constexpr size_t warmupSteps = 5;
@@ -127,3 +129,4 @@ int main() {
         return EXIT_FAILURE;
     }
 }
+
