@@ -69,4 +69,7 @@ option(BUILD_BENCHMARKS "Build performance benchmarks" ON)
 if(BUILD_BENCHMARKS)
     add_executable(mesh_benchmark benchmarks/mesh_benchmark.cpp)
     target_link_libraries(mesh_benchmark PRIVATE adaptive_mesh)
+
+    add_executable(mesh_phase_profile benchmarks/mesh_phase_profile.cpp)
+    target_link_libraries(mesh_phase_profile PRIVATE adaptive_mesh)
 endif()
