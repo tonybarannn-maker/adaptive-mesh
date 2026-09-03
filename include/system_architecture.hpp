@@ -361,6 +361,11 @@ namespace AdaptiveMesh {
             }
             std::unordered_set<EdgeKey, EdgeKeyHash> directedEdges;
             size_t edgeCount = 0;
+            for (const auto& node : nodes) {
+                edgeCount += node.bridges.size();
+            }
+            directedEdges.reserve(edgeCount);
+
             for (size_t sourceNodeId = 0; sourceNodeId < nodes.size(); ++sourceNodeId) {
                 const auto& node = nodes[sourceNodeId];
                 try {
@@ -386,7 +391,6 @@ namespace AdaptiveMesh {
                     directedEdges.emplace(sourceNodeId, static_cast<size_t>(bridge.targetNodeId));
                 }
             }
-            directedEdges.reserve(edgeCount);
             for (size_t sourceNodeId = 0; sourceNodeId < nodes.size(); ++sourceNodeId) {
                 for (const auto& bridge : nodes[sourceNodeId].bridges) {
                     const EdgeKey reverseKey{static_cast<size_t>(bridge.targetNodeId), sourceNodeId};
