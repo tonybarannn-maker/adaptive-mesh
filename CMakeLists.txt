@@ -72,4 +72,7 @@ if(BUILD_BENCHMARKS)
 
     add_executable(mesh_phase_profile benchmarks/mesh_phase_profile.cpp)
     target_link_libraries(mesh_phase_profile PRIVATE adaptive_mesh)
+
+    add_executable(mesh_scaling_sweep benchmarks/mesh_scaling_sweep.cpp)
+    target_link_libraries(mesh_scaling_sweep PRIVATE adaptive_mesh)
 endif()
