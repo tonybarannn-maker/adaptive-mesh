@@ -253,6 +253,7 @@ namespace AdaptiveMesh {
         std::vector<std::vector<BridgeStatus>> pendingBridgeStatuses;
         bool stoppingWorkers = false;
         std::exception_ptr workerException;
+        bool simulationBufferShapeDirty = true;
         bool topologyValidationRequired = true;
 #ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
         SimulationPhaseProfile lastSimulationPhaseProfile{};
@@ -483,6 +484,7 @@ namespace AdaptiveMesh {
                 throw std::invalid_argument("node ID must match insertion index");
             }
             nodes.emplace_back(id, pos, baseline);
+            simulationBufferShapeDirty = true;
             topologyValidationRequired = true;
         }
 
@@ -501,6 +503,7 @@ namespace AdaptiveMesh {
                 throw std::invalid_argument("bridge pair already exists");
             }
             connectNodesUnlocked(nodeA, nodeB);
+            simulationBufferShapeDirty = true;
             topologyValidationRequired = true;
         }
 
@@ -542,6 +545,7 @@ namespace AdaptiveMesh {
             }
             if (!connections.empty()) {
                 enforceStabilityConditionUnlocked();
+                simulationBufferShapeDirty = true;
                 topologyValidationRequired = true;
             }
         }
@@ -603,8 +607,10 @@ namespace AdaptiveMesh {
                     }
                 }
             }
+            bool topologyShapeChanged = false;
             for (size_t sourceNodeId = 0; sourceNodeId < nodes.size(); ++sourceNodeId) {
                 auto& bridges = nodes[sourceNodeId].bridges;
+                const size_t oldSize = bridges.size();
                 std::erase_if(bridges, [&invalidPairs, sourceNodeId, nodeCount = nodes.size()](const SpatialBridge& bridge) {
                     if (bridge.targetNodeId < 0 || bridge.targetNodeId >= static_cast<int>(nodeCount)) return true;
                     const size_t targetNodeId = static_cast<size_t>(bridge.targetNodeId);
@@ -613,8 +619,12 @@ namespace AdaptiveMesh {
                         : EdgeKey{targetNodeId, sourceNodeId};
                     return invalidPairs.contains(pairKey);
                 });
+                topologyShapeChanged |= bridges.size() != oldSize;
             }
             enforceStabilityConditionUnlocked();
+            if (topologyShapeChanged) {
+                simulationBufferShapeDirty = true;
+            }
             topologyValidationRequired = true;
         }
 
@@ -622,6 +632,7 @@ namespace AdaptiveMesh {
             requireFinite(radius, "radius");
             if (radius < 0.0) throw std::invalid_argument("radius must not be negative");
             std::unique_lock lock(topologyMutex);
+            bool topologyShapeChanged = false;
             std::unordered_set<EdgeKey, EdgeKeyHash> directedEdges;
             size_t edgeCount = 0;
             for (const auto& node : nodes) edgeCount += node.bridges.size();
@@ -639,6 +650,7 @@ namespace AdaptiveMesh {
                         const EdgeKey forwardKey{i, j};
                         if (!directedEdges.contains(forwardKey)) {
                             connectNodesUnlocked(static_cast<int>(i), static_cast<int>(j), false);
+                            topologyShapeChanged = true;
                             directedEdges.insert(forwardKey);
                             directedEdges.insert(EdgeKey{j, i});
                         }
@@ -646,6 +658,9 @@ namespace AdaptiveMesh {
                 }
             }
             enforceStabilityConditionUnlocked();
+            if (topologyShapeChanged) {
+                simulationBufferShapeDirty = true;
+            }
             topologyValidationRequired = true;
         }
 
@@ -675,13 +690,16 @@ namespace AdaptiveMesh {
             const auto bufferPreparationStart = std::chrono::steady_clock::now();
             profile.workerPoolReadyMicroseconds = std::chrono::duration<double, std::micro>(bufferPreparationStart - workerPoolStart).count();
 #endif
-            computedStates.resize(nodes.size());
-            pendingBridgeCapacities.resize(nodes.size());
-            pendingBridgeStatuses.resize(nodes.size());
-            for (size_t nodeId = 0; nodeId < nodes.size(); ++nodeId) {
-                const size_t bridgeCount = nodes[nodeId].bridges.size();
-                pendingBridgeCapacities[nodeId].resize(bridgeCount);
-                pendingBridgeStatuses[nodeId].resize(bridgeCount);
+            if (simulationBufferShapeDirty) {
+                computedStates.resize(nodes.size());
+                pendingBridgeCapacities.resize(nodes.size());
+                pendingBridgeStatuses.resize(nodes.size());
+                for (size_t nodeId = 0; nodeId < nodes.size(); ++nodeId) {
+                    const size_t bridgeCount = nodes[nodeId].bridges.size();
+                    pendingBridgeCapacities[nodeId].resize(bridgeCount);
+                    pendingBridgeStatuses[nodeId].resize(bridgeCount);
+                }
+                simulationBufferShapeDirty = false;
             }
 #ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
             const auto dispatchStart = std::chrono::steady_clock::now();
