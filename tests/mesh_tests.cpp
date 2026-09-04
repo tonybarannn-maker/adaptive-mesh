@@ -71,6 +71,51 @@ void test_topology_contract() {
     require(mesh.getNodeBridgesCount(1) == 0, "pruning must remove reverse bridge with its pair");
 }
 
+void test_bulk_connection_contract() {
+    using namespace AdaptiveMesh;
+    const std::vector<std::pair<int, int>> pairs{{0, 1}, {1, 2}};
+    SpatialAdaptiveMesh bulkMesh;
+    SpatialAdaptiveMesh individualMesh;
+    for (size_t nodeId = 0; nodeId < 3; ++nodeId) {
+        const Vector3D position{static_cast<double>(nodeId), 0.0, 0.0};
+        bulkMesh.addNode(nodeId, position, 0.0);
+        individualMesh.addNode(nodeId, position, 0.0);
+    }
+
+    bulkMesh.connectNodePairs(pairs);
+    individualMesh.connectNodes(0, 1);
+    individualMesh.connectNodes(1, 2);
+    bulkMesh.injectExternalShock(0, 2.0);
+    individualMesh.injectExternalShock(0, 2.0);
+    bulkMesh.simulationStep();
+    individualMesh.simulationStep();
+    for (size_t nodeId = 0; nodeId < 3; ++nodeId) {
+        require(bulkMesh.getNodeBridgesCount(nodeId) == individualMesh.getNodeBridgesCount(nodeId),
+                "bulk and individual topology bridge counts must match");
+        require(std::abs(bulkMesh.getNodeState(nodeId) - individualMesh.getNodeState(nodeId)) < 1e-12,
+                "bulk and individual topology state must match");
+    }
+
+    SpatialAdaptiveMesh invalidMesh;
+    invalidMesh.addNode(0, {0.0, 0.0, 0.0}, 0.0);
+    invalidMesh.addNode(1, {1.0, 0.0, 0.0}, 0.0);
+    invalidMesh.addNode(2, {2.0, 0.0, 0.0}, 0.0);
+    requireThrows<std::out_of_range>([&invalidMesh] {
+        invalidMesh.connectNodePairs({{0, 1}, {1, 3}});
+    }, "invalid pair must reject the entire batch");
+    require(invalidMesh.getNodeBridgesCount(0) == 0 &&
+                invalidMesh.getNodeBridgesCount(1) == 0 &&
+                invalidMesh.getNodeBridgesCount(2) == 0,
+            "invalid batch must not partially mutate topology");
+    requireThrows<std::invalid_argument>([&invalidMesh] {
+        invalidMesh.connectNodePairs({{0, 1}, {1, 0}});
+    }, "duplicate pair in batch must be rejected");
+    invalidMesh.connectNodes(0, 1);
+    requireThrows<std::invalid_argument>([&invalidMesh] {
+        invalidMesh.connectNodePairs({{1, 0}});
+    }, "existing pair in batch must be rejected");
+}
+
 void test_numeric_input_contract() {
     using namespace AdaptiveMesh;
 
@@ -265,6 +310,7 @@ void test_stability_and_shock() {
 int main() {
     try {
         test_topology_contract();
+        test_bulk_connection_contract();
         test_numeric_input_contract();
         test_worker_configuration_is_deterministic();
         test_legacy_simulation_step_wrapper();

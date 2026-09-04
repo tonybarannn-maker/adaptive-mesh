@@ -504,6 +504,48 @@ namespace AdaptiveMesh {
             topologyValidationRequired = true;
         }
 
+        /**
+         * Connects a batch of node pairs and recomputes stability once at the end.
+         * All pairs are validated before the first topology mutation.
+         */
+        void connectNodePairs(const std::vector<std::pair<int, int>>& connections) {
+            std::unique_lock lock(topologyMutex);
+            std::unordered_set<EdgeKey, EdgeKeyHash> batchPairs;
+            batchPairs.reserve(connections.size());
+
+            for (const auto& [nodeA, nodeB] : connections) {
+                validateNodeIndex(nodeA);
+                validateNodeIndex(nodeB);
+                if (nodeA == nodeB) {
+                    throw std::invalid_argument("self-connections are not allowed");
+                }
+
+                const size_t first = static_cast<size_t>(std::min(nodeA, nodeB));
+                const size_t second = static_cast<size_t>(std::max(nodeA, nodeB));
+                const EdgeKey pairKey{first, second};
+                if (!batchPairs.insert(pairKey).second) {
+                    throw std::invalid_argument("duplicate bridge pair in batch");
+                }
+
+                const bool alreadyConnected = std::any_of(
+                    nodes[first].bridges.begin(), nodes[first].bridges.end(),
+                    [second](const SpatialBridge& bridge) {
+                        return bridge.targetNodeId == static_cast<int>(second);
+                    });
+                if (alreadyConnected) {
+                    throw std::invalid_argument("bridge pair already exists");
+                }
+            }
+
+            for (const auto& [nodeA, nodeB] : connections) {
+                connectNodesUnlocked(nodeA, nodeB, false);
+            }
+            if (!connections.empty()) {
+                enforceStabilityConditionUnlocked();
+                topologyValidationRequired = true;
+            }
+        }
+
         void enforceStabilityCondition() noexcept {
             std::unique_lock lock(topologyMutex);
             enforceStabilityConditionUnlocked();
