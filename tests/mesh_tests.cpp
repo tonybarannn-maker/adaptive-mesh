@@ -250,6 +250,85 @@ void test_post_commit_health_remains_finite_for_large_drift() {
             "neighbor health must remain finite for large drift");
 }
 
+void requireFiniteNodeOutputs(const AdaptiveMesh::SpatialAdaptiveMesh& mesh, size_t nodeCount) {
+    for (size_t nodeId = 0; nodeId < nodeCount; ++nodeId) {
+        require(std::isfinite(mesh.getNodeState(nodeId)), "state must remain finite after topology mutation");
+        require(std::isfinite(mesh.getNodeHealth(nodeId)), "health must remain finite after topology mutation");
+    }
+}
+
+void test_simulation_buffer_shape_invalidation() {
+    using namespace AdaptiveMesh;
+
+    {
+        SpatialAdaptiveMesh mesh(1);
+        mesh.addNode(0, {0.0, 0.0, 0.0}, 0.0);
+        mesh.simulationStep();
+        mesh.addNode(1, {1.0, 0.0, 0.0}, 0.0);
+        mesh.simulationStep();
+        requireFiniteNodeOutputs(mesh, 2);
+    }
+
+    {
+        SpatialAdaptiveMesh mesh(1);
+        mesh.addNode(0, {0.0, 0.0, 0.0}, 0.0);
+        mesh.addNode(1, {1.0, 0.0, 0.0}, 0.0);
+        mesh.simulationStep();
+        mesh.connectNodes(0, 1);
+        mesh.simulationStep();
+        requireFiniteNodeOutputs(mesh, 2);
+    }
+
+    {
+        SpatialAdaptiveMesh mesh(1);
+        for (size_t nodeId = 0; nodeId < 3; ++nodeId) {
+            mesh.addNode(nodeId, {static_cast<double>(nodeId), 0.0, 0.0}, 0.0);
+        }
+        mesh.simulationStep();
+        mesh.connectNodePairs({{0, 1}, {1, 2}});
+        mesh.simulationStep();
+        requireFiniteNodeOutputs(mesh, 3);
+    }
+
+    {
+        SpatialAdaptiveMesh mesh(1);
+        mesh.addNode(0, {0.0, 0.0, 0.0}, 0.0);
+        mesh.addNode(1, {1.0, 0.0, 0.0}, 0.0);
+        mesh.connectNodes(0, 1);
+        mesh.injectExternalShock(0, 25.0);
+        mesh.injectExternalShock(0, 25.0);
+        mesh.injectExternalShock(0, 25.0);
+        mesh.simulationStep();
+        mesh.pruneIsolatedBridges();
+        mesh.simulationStep();
+        require(mesh.getNodeBridgesCount(0) == 0, "prune must remove the forward bridge");
+        requireFiniteNodeOutputs(mesh, 2);
+    }
+
+    {
+        SpatialAdaptiveMesh mesh(1);
+        mesh.addNode(0, {0.0, 0.0, 0.0}, 0.0);
+        mesh.addNode(1, {1.0, 0.0, 0.0}, 0.0);
+        mesh.simulationStep();
+        mesh.autoConnectNearbyNodes(2.0);
+        mesh.simulationStep();
+        require(mesh.getNodeBridgesCount(0) == 1, "auto-connect must add the edge");
+        requireFiniteNodeOutputs(mesh, 2);
+    }
+
+    {
+        SpatialAdaptiveMesh mesh(1);
+        mesh.addNode(0, {0.0, 0.0, 0.0}, 0.0);
+        mesh.addNode(1, {1.0, 0.0, 0.0}, 0.0);
+        mesh.simulationStep();
+        mesh.connectNodePairs({});
+        mesh.pruneIsolatedBridges();
+        mesh.autoConnectNearbyNodes(0.0);
+        mesh.simulationStep();
+        requireFiniteNodeOutputs(mesh, 2);
+    }
+}
+
 void test_bounded_worker_scale_smoke(size_t nodeCount) {
     using namespace AdaptiveMesh;
 
@@ -334,6 +413,7 @@ int main() {
         test_worker_configuration_is_deterministic();
         test_legacy_simulation_step_wrapper();
         test_post_commit_health_remains_finite_for_large_drift();
+        test_simulation_buffer_shape_invalidation();
         test_bounded_worker_scale_smoke(100);
         test_bounded_worker_scale_smoke(1000);
         test_worker_pool_expands_between_steps();
