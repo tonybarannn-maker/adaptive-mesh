@@ -253,6 +253,7 @@ namespace AdaptiveMesh {
         std::vector<std::vector<BridgeStatus>> pendingBridgeStatuses;
         bool stoppingWorkers = false;
         std::exception_ptr workerException;
+        bool topologyValidationRequired = true;
 #ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
         SimulationPhaseProfile lastSimulationPhaseProfile{};
 #endif
@@ -374,10 +375,11 @@ namespace AdaptiveMesh {
             workers.clear();
         }
 
-        void validateTopologyAndStateUnlocked() const {
+        void validateTopologyUnlocked() const {
             if (!std::isfinite(alpha)) {
                 throw std::runtime_error("simulation alpha must be finite");
             }
+
             std::unordered_set<EdgeKey, EdgeKeyHash> directedEdges;
             size_t edgeCount = 0;
             for (const auto& node : nodes) {
@@ -390,34 +392,76 @@ namespace AdaptiveMesh {
                 try {
                     node.position.validate();
                     node.invariant.validate();
-                    requireFinite(node.state.load(), "node state");
-                    requireFinite(node.healthIndex.load(), "node health");
                 } catch (const std::invalid_argument& error) {
-                    throw std::runtime_error(std::string{"invalid node invariant: "} + error.what());
+                    throw std::runtime_error(
+                        std::string{"invalid node invariant: "} + error.what());
                 }
-                edgeCount += node.bridges.size();
+
                 for (const auto& bridge : node.bridges) {
                     if (bridge.targetNodeId < 0 ||
                         bridge.targetNodeId >= static_cast<int>(nodes.size()) ||
                         bridge.targetNodeId == static_cast<int>(sourceNodeId)) {
-                        throw std::runtime_error("bridge target violates topology invariant");
+                        throw std::runtime_error(
+                            "bridge target violates topology invariant");
                     }
+
                     if (!std::isfinite(bridge.distance) ||
-                        !std::isfinite(bridge.orientationWeight) ||
-                        !std::isfinite(bridge.capacity)) {
-                        throw std::runtime_error("bridge values must be finite");
+                        !std::isfinite(bridge.orientationWeight)) {
+                        throw std::runtime_error(
+                            "bridge geometry values must be finite");
                     }
-                    directedEdges.emplace(sourceNodeId, static_cast<size_t>(bridge.targetNodeId));
+
+                    directedEdges.emplace(
+                        sourceNodeId,
+                        static_cast<size_t>(bridge.targetNodeId));
                 }
             }
+
             for (size_t sourceNodeId = 0; sourceNodeId < nodes.size(); ++sourceNodeId) {
                 for (const auto& bridge : nodes[sourceNodeId].bridges) {
-                    const EdgeKey reverseKey{static_cast<size_t>(bridge.targetNodeId), sourceNodeId};
+                    const EdgeKey reverseKey{
+                        static_cast<size_t>(bridge.targetNodeId),
+                        sourceNodeId
+                    };
+
                     if (!directedEdges.contains(reverseKey)) {
-                        throw std::runtime_error("bridge pair invariant is violated");
+                        throw std::runtime_error(
+                            "bridge pair invariant is violated");
                     }
                 }
             }
+        }
+
+        void validateDynamicStateUnlocked() const {
+            if (!std::isfinite(alpha)) {
+                throw std::runtime_error("simulation alpha must be finite");
+            }
+
+            for (const auto& node : nodes) {
+                try {
+                    requireFinite(node.state.load(), "node state");
+                    requireFinite(node.healthIndex.load(), "node health");
+                } catch (const std::invalid_argument& error) {
+                    throw std::runtime_error(
+                        std::string{"invalid node state: "} + error.what());
+                }
+
+                for (const auto& bridge : node.bridges) {
+                    if (!std::isfinite(bridge.capacity)) {
+                        throw std::runtime_error(
+                            "bridge capacity must be finite");
+                    }
+                }
+            }
+        }
+
+        void validateTopologyAndStateUnlocked() {
+            if (topologyValidationRequired) {
+                validateTopologyUnlocked();
+                topologyValidationRequired = false;
+            }
+
+            validateDynamicStateUnlocked();
         }
 
     public:
@@ -439,6 +483,7 @@ namespace AdaptiveMesh {
                 throw std::invalid_argument("node ID must match insertion index");
             }
             nodes.emplace_back(id, pos, baseline);
+            topologyValidationRequired = true;
         }
 
         void connectNodes(int nodeA, int nodeB) {
@@ -456,11 +501,13 @@ namespace AdaptiveMesh {
                 throw std::invalid_argument("bridge pair already exists");
             }
             connectNodesUnlocked(nodeA, nodeB);
+            topologyValidationRequired = true;
         }
 
         void enforceStabilityCondition() noexcept {
             std::unique_lock lock(topologyMutex);
             enforceStabilityConditionUnlocked();
+            topologyValidationRequired = true;
         }
 
         /** Removes both directions of a bridge pair when either direction is isolated. */
@@ -526,6 +573,7 @@ namespace AdaptiveMesh {
                 });
             }
             enforceStabilityConditionUnlocked();
+            topologyValidationRequired = true;
         }
 
         void autoConnectNearbyNodes(double radius) {
@@ -556,6 +604,7 @@ namespace AdaptiveMesh {
                 }
             }
             enforceStabilityConditionUnlocked();
+            topologyValidationRequired = true;
         }
 
         void injectExternalShock(int targetNodeId, double shockMagnitude) {
