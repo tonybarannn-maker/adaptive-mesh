@@ -316,6 +316,10 @@ namespace AdaptiveMesh {
                         currentState + deltaS, node.healthIndex.load(), node.invariant);
                     SpatialBridge nextBridge = bridge;
                     nextBridge.updateBridgeState(category);
+                    if (!std::isfinite(nextBridge.capacity)) {
+                        throw std::runtime_error(
+                            "simulation produced a non-finite bridge capacity");
+                    }
                     bridgeCapacityOutput[i][bridgeIndex] = nextBridge.capacity;
                     bridgeStatusOutput[i][bridgeIndex] = nextBridge.status;
                     diffusionSum += nextBridge.getEffectiveTransmission() * deltaS;
@@ -764,11 +768,6 @@ namespace AdaptiveMesh {
                 if (pendingBridgeCapacities[i].size() != nodes[i].bridges.size() ||
                     pendingBridgeStatuses[i].size() != nodes[i].bridges.size()) {
                     throw std::runtime_error("pending bridge state size mismatch");
-                }
-                for (size_t bridgeIndex = 0; bridgeIndex < nodes[i].bridges.size(); ++bridgeIndex) {
-                    if (!std::isfinite(pendingBridgeCapacities[i][bridgeIndex])) {
-                        throw std::runtime_error("simulation produced a non-finite bridge capacity");
-                    }
                 }
             }
 #ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
