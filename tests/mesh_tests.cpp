@@ -231,6 +231,25 @@ void test_legacy_simulation_step_wrapper() {
             "legacy simulationStepAsync wrapper must complete synchronously");
 }
 
+void test_post_commit_health_remains_finite_for_large_drift() {
+    using namespace AdaptiveMesh;
+
+    SpatialAdaptiveMesh mesh(1);
+    constexpr double largeBaseline = 1.0e308;
+    mesh.addNode(0, {0.0, 0.0, 0.0}, largeBaseline);
+    mesh.addNode(1, {1.0, 0.0, 0.0}, 0.0);
+    mesh.connectNodes(0, 1);
+
+    mesh.simulationStep();
+
+    require(std::isfinite(mesh.getNodeState(0)),
+            "large finite drift must not produce a non-finite state");
+    require(std::isfinite(mesh.getNodeHealth(0)),
+            "post-commit health must remain finite for large drift");
+    require(std::isfinite(mesh.getNodeHealth(1)),
+            "neighbor health must remain finite for large drift");
+}
+
 void test_bounded_worker_scale_smoke(size_t nodeCount) {
     using namespace AdaptiveMesh;
 
@@ -314,6 +333,7 @@ int main() {
         test_numeric_input_contract();
         test_worker_configuration_is_deterministic();
         test_legacy_simulation_step_wrapper();
+        test_post_commit_health_remains_finite_for_large_drift();
         test_bounded_worker_scale_smoke(100);
         test_bounded_worker_scale_smoke(1000);
         test_worker_pool_expands_between_steps();
