@@ -646,35 +646,55 @@ namespace AdaptiveMesh {
             profile.bufferPreparationMicroseconds = std::chrono::duration<double, std::micro>(dispatchStart - bufferPreparationStart).count();
 #endif
             if (computedStates.empty()) return;
-            {
-                std::lock_guard workLock(workMutex);
-                activeNodeCount = nodes.size();
-                activeWorkerCount = workers.size();
-                completedWorkerCount = 0;
-                workerException = nullptr;
-                dispatchedStates = &computedStates;
-                dispatchedBridgeCapacities = &pendingBridgeCapacities;
-                dispatchedBridgeStatuses = &pendingBridgeStatuses;
-                ++workGeneration;
-            }
-            workAvailable.notify_all();
-            {
+
+            if (workers.size() == 1) {
+                runNodeRange(
+                    0,
+                    nodes.size(),
+                    computedStates,
+                    pendingBridgeCapacities,
+                    pendingBridgeStatuses);
 #ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
-                const auto waitStart = std::chrono::steady_clock::now();
+                const auto directResultValidationStart = std::chrono::steady_clock::now();
+                profile.workerDispatchWaitMicroseconds =
+                    std::chrono::duration<double, std::micro>(
+                        directResultValidationStart - dispatchStart).count();
 #endif
-                std::unique_lock workLock(workMutex);
-                workCompleted.wait(workLock, [this] { return completedWorkerCount == activeWorkerCount; });
+            } else {
+                {
+                    std::lock_guard workLock(workMutex);
+                    activeNodeCount = nodes.size();
+                    activeWorkerCount = workers.size();
+                    completedWorkerCount = 0;
+                    workerException = nullptr;
+                    dispatchedStates = &computedStates;
+                    dispatchedBridgeCapacities = &pendingBridgeCapacities;
+                    dispatchedBridgeStatuses = &pendingBridgeStatuses;
+                    ++workGeneration;
+                }
+                workAvailable.notify_all();
+                {
 #ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
-                const auto resultValidationStart = std::chrono::steady_clock::now();
-                profile.workerDispatchWaitMicroseconds = std::chrono::duration<double, std::micro>(resultValidationStart - waitStart).count();
+                    const auto waitStart = std::chrono::steady_clock::now();
 #endif
-                dispatchedStates = nullptr;
-                dispatchedBridgeCapacities = nullptr;
-                dispatchedBridgeStatuses = nullptr;
-                std::exception_ptr error = workerException;
-                workerException = nullptr;
-                workLock.unlock();
-                if (error) std::rethrow_exception(error);
+                    std::unique_lock workLock(workMutex);
+                    workCompleted.wait(workLock, [this] {
+                        return completedWorkerCount == activeWorkerCount;
+                    });
+#ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
+                    const auto resultValidationStart = std::chrono::steady_clock::now();
+                    profile.workerDispatchWaitMicroseconds =
+                        std::chrono::duration<double, std::micro>(
+                            resultValidationStart - waitStart).count();
+#endif
+                    dispatchedStates = nullptr;
+                    dispatchedBridgeCapacities = nullptr;
+                    dispatchedBridgeStatuses = nullptr;
+                    std::exception_ptr error = workerException;
+                    workerException = nullptr;
+                    workLock.unlock();
+                    if (error) std::rethrow_exception(error);
+                }
             }
 #ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
             const auto resultValidationStart = std::chrono::steady_clock::now();
