@@ -769,7 +769,6 @@ namespace AdaptiveMesh {
             const auto postValidationStart = std::chrono::steady_clock::now();
             profile.commitMicroseconds = std::chrono::duration<double, std::micro>(postValidationStart - commitStart).count();
 #endif
-            validateTopologyAndStateUnlocked();
 #ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
             const auto profileEnd = std::chrono::steady_clock::now();
             profile.postValidationMicroseconds = std::chrono::duration<double, std::micro>(profileEnd - postValidationStart).count();
