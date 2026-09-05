@@ -461,12 +461,6 @@ namespace AdaptiveMesh {
                         std::string{"invalid node state: "} + error.what());
                 }
 
-                for (const auto& bridge : node.bridges) {
-                    if (!std::isfinite(bridge.capacity)) {
-                        throw std::runtime_error(
-                            "bridge capacity must be finite");
-                    }
-                }
             }
         }
 
