@@ -789,13 +789,9 @@ namespace AdaptiveMesh {
                 nodes[i].state.store(computedStates[i]);
                 nodes[i].updateHealth();
                 for (size_t bridgeIndex = 0; bridgeIndex < nodes[i].bridges.size(); ++bridgeIndex) {
-                    auto& bridge = nodes[i].bridges[bridgeIndex];
-                    const double nextCapacity = pendingBridgeCapacities[i][bridgeIndex];
-                    const BridgeStatus nextStatus = pendingBridgeStatuses[i][bridgeIndex];
-                    if (bridge.capacity != nextCapacity || bridge.status != nextStatus) {
-                        bridge.capacity = nextCapacity;
-                        bridge.status = nextStatus;
-                    }
+                    if (pendingBridgeChanged[i][bridgeIndex] == 0) continue;
+                    nodes[i].bridges[bridgeIndex].capacity = pendingBridgeCapacities[i][bridgeIndex];
+                    nodes[i].bridges[bridgeIndex].status = pendingBridgeStatuses[i][bridgeIndex];
                 }
             }
 #ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
