@@ -338,8 +338,10 @@ namespace AdaptiveMesh {
                         bridge.status != nextBridge.status;
                     bridgeChangedOutput[i][bridgeIndex] =
                         static_cast<std::uint8_t>(bridgeChanged);
-                    bridgeCapacityOutput[i][bridgeIndex] = nextBridge.capacity;
-                    bridgeStatusOutput[i][bridgeIndex] = nextBridge.status;
+                    if (bridgeChanged) {
+                        bridgeCapacityOutput[i][bridgeIndex] = nextBridge.capacity;
+                        bridgeStatusOutput[i][bridgeIndex] = nextBridge.status;
+                    }
                     diffusionSum +=
                         computeEffectiveTransmissionUnchecked(nextBridge) * deltaS;
                 }
