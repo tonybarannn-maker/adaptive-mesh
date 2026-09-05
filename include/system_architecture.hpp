@@ -765,10 +765,6 @@ namespace AdaptiveMesh {
 #endif
             for (size_t i = 0; i < nodes.size(); ++i) {
                 if (!std::isfinite(computedStates[i])) throw std::runtime_error("simulation produced a non-finite state");
-                if (pendingBridgeCapacities[i].size() != nodes[i].bridges.size() ||
-                    pendingBridgeStatuses[i].size() != nodes[i].bridges.size()) {
-                    throw std::runtime_error("pending bridge state size mismatch");
-                }
             }
 #ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
             const auto commitStart = std::chrono::steady_clock::now();
