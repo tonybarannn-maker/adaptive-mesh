@@ -301,6 +301,15 @@ namespace AdaptiveMesh {
             return std::min(requestedWorkers, nodes.size());
         }
 
+        [[nodiscard]] static double computeEffectiveTransmissionUnchecked(
+            const SpatialBridge& bridge) noexcept
+        {
+            const double spatialAttenuation =
+                1.0 / (1.0 + 0.1 * bridge.distance);
+            return bridge.capacity * spatialAttenuation *
+                   bridge.orientationWeight;
+        }
+
         void runNodeRange(size_t firstNode, size_t lastNode,
                           std::vector<double>& outputStates,
                           std::vector<std::vector<double>>& bridgeCapacityOutput,
@@ -331,7 +340,8 @@ namespace AdaptiveMesh {
                         static_cast<std::uint8_t>(bridgeChanged);
                     bridgeCapacityOutput[i][bridgeIndex] = nextBridge.capacity;
                     bridgeStatusOutput[i][bridgeIndex] = nextBridge.status;
-                    diffusionSum += nextBridge.getEffectiveTransmission() * deltaS;
+                    diffusionSum +=
+                        computeEffectiveTransmissionUnchecked(nextBridge) * deltaS;
                 }
                 outputStates[i] = currentState + alpha * diffusionSum;
             }
