@@ -310,6 +310,19 @@ namespace AdaptiveMesh {
                    bridge.orientationWeight;
         }
 
+        static void updateHealthUnchecked(
+            AutopoieticNode& node,
+            double currentState) noexcept
+        {
+            const double drift =
+                std::abs(currentState - node.invariant.baseline);
+
+            node.healthIndex.store(
+                std::max(
+                    0.0,
+                    1.0 - (drift / node.invariant.maxEpsilon)));
+        }
+
         void runNodeRange(size_t firstNode, size_t lastNode,
                           std::vector<double>& outputStates,
                           std::vector<std::vector<double>>& bridgeCapacityOutput,
@@ -788,12 +801,13 @@ namespace AdaptiveMesh {
                 if (!std::isfinite(computedStates[i])) throw std::runtime_error("simulation produced a non-finite state");
             }
 #ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
-            const auto commitStart = std::chrono::steady_clock::now();
-            profile.resultValidationMicroseconds = std::chrono::duration<double, std::micro>(commitStart - resultValidationStart).count();
+            const auto resultValidationEnd = std::chrono::steady_clock::now();
+            profile.resultValidationMicroseconds = std::chrono::duration<double, std::micro>(resultValidationEnd - resultValidationStart).count();
 #endif
             for (size_t i = 0; i < nodes.size(); ++i) {
-                nodes[i].state.store(computedStates[i]);
-                nodes[i].updateHealth();
+                const double committedState = computedStates[i];
+                nodes[i].state.store(committedState);
+                updateHealthUnchecked(nodes[i], committedState);
                 for (size_t bridgeIndex = 0; bridgeIndex < nodes[i].bridges.size(); ++bridgeIndex) {
                     if (pendingBridgeChanged[i][bridgeIndex] == 0) continue;
                     nodes[i].bridges[bridgeIndex].capacity = pendingBridgeCapacities[i][bridgeIndex];
@@ -802,7 +816,6 @@ namespace AdaptiveMesh {
             }
 #ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
             const auto postValidationStart = std::chrono::steady_clock::now();
-            profile.commitMicroseconds = std::chrono::duration<double, std::micro>(postValidationStart - commitStart).count();
 #endif
 #ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
             const auto profileEnd = std::chrono::steady_clock::now();
