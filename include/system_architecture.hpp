@@ -26,6 +26,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <cstdint>
 
 #ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
 #include <chrono>
@@ -248,9 +249,11 @@ namespace AdaptiveMesh {
         std::vector<double>* dispatchedStates = nullptr;
         std::vector<std::vector<double>>* dispatchedBridgeCapacities = nullptr;
         std::vector<std::vector<BridgeStatus>>* dispatchedBridgeStatuses = nullptr;
+        std::vector<std::vector<std::uint8_t>>* dispatchedBridgeChanged = nullptr;
         std::vector<double> computedStates;
         std::vector<std::vector<double>> pendingBridgeCapacities;
         std::vector<std::vector<BridgeStatus>> pendingBridgeStatuses;
+        std::vector<std::vector<std::uint8_t>> pendingBridgeChanged;
         bool stoppingWorkers = false;
         std::exception_ptr workerException;
         bool simulationBufferShapeDirty = true;
@@ -301,7 +304,8 @@ namespace AdaptiveMesh {
         void runNodeRange(size_t firstNode, size_t lastNode,
                           std::vector<double>& outputStates,
                           std::vector<std::vector<double>>& bridgeCapacityOutput,
-                          std::vector<std::vector<BridgeStatus>>& bridgeStatusOutput)
+                          std::vector<std::vector<BridgeStatus>>& bridgeStatusOutput,
+                          std::vector<std::vector<std::uint8_t>>& bridgeChangedOutput)
         {
             for (size_t i = firstNode; i < lastNode; ++i) {
                 auto& node = nodes[i];
@@ -320,6 +324,11 @@ namespace AdaptiveMesh {
                         throw std::runtime_error(
                             "simulation produced a non-finite bridge capacity");
                     }
+                    const bool bridgeChanged =
+                        bridge.capacity != nextBridge.capacity ||
+                        bridge.status != nextBridge.status;
+                    bridgeChangedOutput[i][bridgeIndex] =
+                        static_cast<std::uint8_t>(bridgeChanged);
                     bridgeCapacityOutput[i][bridgeIndex] = nextBridge.capacity;
                     bridgeStatusOutput[i][bridgeIndex] = nextBridge.status;
                     diffusionSum += nextBridge.getEffectiveTransmission() * deltaS;
@@ -344,11 +353,12 @@ namespace AdaptiveMesh {
                 auto* outputStates = dispatchedStates;
                 auto* bridgeCapacities = dispatchedBridgeCapacities;
                 auto* bridgeStatuses = dispatchedBridgeStatuses;
+                auto* bridgeChanged = dispatchedBridgeChanged;
                 const size_t firstNode = workerId * nodeCount / workerCount;
                 const size_t lastNode = (workerId + 1) * nodeCount / workerCount;
                 lock.unlock();
                 try {
-                    runNodeRange(firstNode, lastNode, *outputStates, *bridgeCapacities, *bridgeStatuses);
+                    runNodeRange(firstNode, lastNode, *outputStates, *bridgeCapacities, *bridgeStatuses, *bridgeChanged);
                 } catch (...) {
                     lock.lock();
                     if (!workerException) workerException = std::current_exception();
@@ -698,10 +708,12 @@ namespace AdaptiveMesh {
                 computedStates.resize(nodes.size());
                 pendingBridgeCapacities.resize(nodes.size());
                 pendingBridgeStatuses.resize(nodes.size());
+                pendingBridgeChanged.resize(nodes.size());
                 for (size_t nodeId = 0; nodeId < nodes.size(); ++nodeId) {
                     const size_t bridgeCount = nodes[nodeId].bridges.size();
                     pendingBridgeCapacities[nodeId].resize(bridgeCount);
                     pendingBridgeStatuses[nodeId].resize(bridgeCount);
+                    pendingBridgeChanged[nodeId].resize(bridgeCount);
                 }
                 simulationBufferShapeDirty = false;
             }
@@ -717,7 +729,8 @@ namespace AdaptiveMesh {
                     nodes.size(),
                     computedStates,
                     pendingBridgeCapacities,
-                    pendingBridgeStatuses);
+                    pendingBridgeStatuses,
+                    pendingBridgeChanged);
 #ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
                 const auto directResultValidationStart = std::chrono::steady_clock::now();
                 profile.workerDispatchWaitMicroseconds =
@@ -734,6 +747,7 @@ namespace AdaptiveMesh {
                     dispatchedStates = &computedStates;
                     dispatchedBridgeCapacities = &pendingBridgeCapacities;
                     dispatchedBridgeStatuses = &pendingBridgeStatuses;
+                    dispatchedBridgeChanged = &pendingBridgeChanged;
                     ++workGeneration;
                 }
                 workAvailable.notify_all();
@@ -754,6 +768,7 @@ namespace AdaptiveMesh {
                     dispatchedStates = nullptr;
                     dispatchedBridgeCapacities = nullptr;
                     dispatchedBridgeStatuses = nullptr;
+                    dispatchedBridgeChanged = nullptr;
                     std::exception_ptr error = workerException;
                     workerException = nullptr;
                     workLock.unlock();
@@ -774,13 +789,9 @@ namespace AdaptiveMesh {
                 nodes[i].state.store(computedStates[i]);
                 nodes[i].updateHealth();
                 for (size_t bridgeIndex = 0; bridgeIndex < nodes[i].bridges.size(); ++bridgeIndex) {
-                    auto& bridge = nodes[i].bridges[bridgeIndex];
-                    const double nextCapacity = pendingBridgeCapacities[i][bridgeIndex];
-                    const BridgeStatus nextStatus = pendingBridgeStatuses[i][bridgeIndex];
-                    if (bridge.capacity != nextCapacity || bridge.status != nextStatus) {
-                        bridge.capacity = nextCapacity;
-                        bridge.status = nextStatus;
-                    }
+                    if (pendingBridgeChanged[i][bridgeIndex] == 0) continue;
+                    nodes[i].bridges[bridgeIndex].capacity = pendingBridgeCapacities[i][bridgeIndex];
+                    nodes[i].bridges[bridgeIndex].status = pendingBridgeStatuses[i][bridgeIndex];
                 }
             }
 #ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
