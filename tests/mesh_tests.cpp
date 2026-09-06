@@ -1,5 +1,7 @@
 ﻿#include "system_architecture.hpp"
 
+#include "interaction_observation.hpp"
+
 #include <cassert>
 #include <cmath>
 #include <fstream>
@@ -187,6 +189,42 @@ void test_numeric_input_contract() {
     const double legacyTransmission = validBridge.getEffectiveTransmission();
     require(coupling == legacyTransmission,
             "legacy transmission API must delegate to canonical coupling API");
+}
+
+void test_interaction_observation_contract() {
+    using AdaptiveMesh::InteractionObservation;
+
+    const InteractionObservation zero(0.0);
+    require(zero.compatibility() == 0.0,
+            "zero interaction compatibility must be preserved");
+
+    const InteractionObservation one(1.0);
+    require(one.compatibility() == 1.0,
+            "unit interaction compatibility must be preserved");
+
+    const InteractionObservation midpoint(0.375);
+    require(midpoint.compatibility() == 0.375,
+            "intermediate interaction compatibility must be preserved");
+
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const double infinity = std::numeric_limits<double>::infinity();
+    const double negativeInfinity = -infinity;
+
+    requireThrows<std::invalid_argument>([nan] {
+        static_cast<void>(InteractionObservation(nan));
+    }, "NaN interaction compatibility must be rejected");
+    requireThrows<std::invalid_argument>([infinity] {
+        static_cast<void>(InteractionObservation(infinity));
+    }, "positive infinite interaction compatibility must be rejected");
+    requireThrows<std::invalid_argument>([negativeInfinity] {
+        static_cast<void>(InteractionObservation(negativeInfinity));
+    }, "negative infinite interaction compatibility must be rejected");
+    requireThrows<std::invalid_argument>([] {
+        static_cast<void>(InteractionObservation(-0.001));
+    }, "negative interaction compatibility must be rejected");
+    requireThrows<std::invalid_argument>([] {
+        static_cast<void>(InteractionObservation(1.001));
+    }, "out-of-range interaction compatibility must be rejected");
 }
 
 void populateLinearMesh(AdaptiveMesh::SpatialAdaptiveMesh& mesh, size_t nodeCount) {
@@ -414,6 +452,7 @@ int main() {
         test_topology_contract();
         test_bulk_connection_contract();
         test_numeric_input_contract();
+        test_interaction_observation_contract();
         test_worker_configuration_is_deterministic();
         test_legacy_simulation_step_wrapper();
         test_post_commit_health_remains_finite_for_large_drift();

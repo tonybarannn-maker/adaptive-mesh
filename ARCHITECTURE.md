@@ -105,3 +105,14 @@ core.
 
 This boundary is an engineering architecture constraint. It is not a patent
 clearance conclusion.
+
+### InteractionObservation
+
+`AdaptiveMesh::InteractionObservation` is a standalone, immutable,
+construction-validated representation of one non-temporal interaction
+compatibility value. Its sole field is `compatibility`, constrained to the
+finite range `[0.0, 1.0]`.
+
+The type is an infrastructure primitive only. It is not stored in
+`SpatialBridge`, does not participate in simulation or topology updates, and
+does not encode history, confidence, persistence, trend, or hysteresis.
