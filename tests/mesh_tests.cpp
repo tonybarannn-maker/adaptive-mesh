@@ -303,6 +303,10 @@ void test_adaptive_bridge_policy_contract() {
 
     require(policy.evaluate(InteractionObservation(0.0), BridgeConfidence(0.0)).value() == 0.0,
             "zero confidence must produce zero evidence");
+    require(policy.evaluate(InteractionObservation(0.5), BridgeConfidence(0.0)).value() == 0.0,
+            "zero confidence at neutral compatibility must produce zero evidence");
+    require(policy.evaluate(InteractionObservation(1.0), BridgeConfidence(0.0)).value() == 0.0,
+            "zero confidence at full compatibility must produce zero evidence");
 
     const double lowerMagnitude =
         policy.evaluate(InteractionObservation(0.75), BridgeConfidence(0.4)).value();
@@ -310,6 +314,17 @@ void test_adaptive_bridge_policy_contract() {
         policy.evaluate(InteractionObservation(0.75), BridgeConfidence(0.8)).value();
     require(higherMagnitude > lowerMagnitude && higherMagnitude >= 0.0,
             "positive evidence magnitude must increase with confidence");
+
+    const double lowerNegativeMagnitude =
+        policy.evaluate(InteractionObservation(0.25), BridgeConfidence(0.4)).value();
+    const double higherNegativeMagnitude =
+        policy.evaluate(InteractionObservation(0.25), BridgeConfidence(0.8)).value();
+    require(std::abs(lowerNegativeMagnitude + 0.2) < 1e-12,
+            "lower negative confidence must produce -0.2 evidence");
+    require(std::abs(higherNegativeMagnitude + 0.4) < 1e-12,
+            "higher negative confidence must produce -0.4 evidence");
+    require(higherNegativeMagnitude < lowerNegativeMagnitude,
+            "negative evidence must strengthen with confidence");
 
     const double negativeEvidence =
         policy.evaluate(InteractionObservation(0.25), BridgeConfidence(0.8)).value();
