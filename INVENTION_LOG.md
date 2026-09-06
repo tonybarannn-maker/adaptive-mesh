@@ -93,7 +93,8 @@ Unknown data must remain `TBD` or `not yet verified` until evidence is available
 - Documentation date: 2026-09-06
 - Role: infrastructure primitive / construction-validated representation
 - Semantics: one non-temporal finite compatibility value in `[0.0, 1.0]`
-- Known first commit/PR: TBD until the implementation commit is created
+- Known first implementation commit: `245178cfefac285a0153ab3134bb457b114fd7ea`
+- First pull request: `#26`
 - Provenance status: new repository type introduced by PR-2; historical
   provenance review remains separate
 - Claimed invention date: TBD

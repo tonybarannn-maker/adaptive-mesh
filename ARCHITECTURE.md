@@ -108,8 +108,9 @@ clearance conclusion.
 
 ### InteractionObservation
 
-`AdaptiveMesh::InteractionObservation` is a standalone, immutable,
-construction-validated representation of one non-temporal interaction
+`AdaptiveMesh::InteractionObservation` is a standalone,
+construction-validated value type with a read-only public interface for one
+non-temporal interaction
 compatibility value. Its sole field is `compatibility`, constrained to the
 finite range `[0.0, 1.0]`.
 
