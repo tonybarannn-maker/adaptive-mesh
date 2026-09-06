@@ -106,8 +106,8 @@ Unknown data must remain `TBD` or `not yet verified` until evidence is available
 - Semantics: one non-temporal finite normalized confidence value in `[0.0, 1.0]`
 - Estimation semantics: none; confidence estimation remains a future boundary
   producer responsibility
-- Known first implementation commit/PR: TBD until the implementation commit is
-  created
+- Known first implementation commit: `b61f3494a04296052152f720f1fd4ca3e97ec1ff`
+- First pull request: `#27`
 - Provenance status: scalar domain primitive; not a standalone invention or
   novel mechanism
 - Claimed invention date: TBD
