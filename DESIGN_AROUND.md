@@ -71,3 +71,16 @@ coverage.
 This baseline intentionally does not design or specify future SOAM v2
 mechanisms. Their architecture, APIs, algorithms, thresholds, state models,
 and implementation details remain outside the scope of this document and PR-1.
+
+## PR-5 persistence boundary
+
+Threshold and consecutive-sample persistence is a known control primitive and
+is not treated as novel by itself.
+
+PR-5 accepts only typed `BridgePolicyEvidence`. The persistence gate has no
+routing, RF measurement, handover, or link enable/disable semantics, and does
+not mutate bridge or topology state.
+
+The reviewed US claims received only a preliminary pass. Foreign family
+coverage, doctrine-of-equivalents analysis, and professional freedom-to-
+operate review remain incomplete and unresolved.
