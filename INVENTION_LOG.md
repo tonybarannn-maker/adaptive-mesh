@@ -152,3 +152,9 @@ Unknown data must remain `TBD` or `not yet verified` until evidence is available
   simulation, topology, routing, transport, or RF/PHY/MAC behavior
 - Provenance status: authorization seam; no novelty or patentability claim
 - Claimed invention date: TBD
+
+### Bridge transition authorization implementation
+
+- Known first implementation commit: `6aceed3c2d996bb9436c83e9f41b6732e8c03f24`
+- First pull request: `#30`
+- Claimed invention date: TBD
