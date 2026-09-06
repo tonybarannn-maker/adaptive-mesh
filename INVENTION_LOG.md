@@ -123,3 +123,20 @@ Unknown data must remain `TBD` or `not yet verified` until evidence is available
 - Provenance status: bounded evidence representation; not a standalone
   invention or novel mechanism
 - Claimed invention date: TBD
+
+### BridgePersistence
+
+- Documentation date: 2026-09-06
+- Role: caller-owned infrastructure/control primitive
+- Input: typed `BridgePolicyEvidence` only
+- Semantics: state-relative activation/release persistence with saturating
+  consecutive-sample counters and typed `PRESERVE`, `CONSTRAIN`, `SUPPORT`
+  output
+- Integration semantics: none; no bridge mutation, topology integration,
+  timestamps, timers, smoothing, adaptive thresholds, or transport/RF/PHY/MAC
+  inputs
+- Known first implementation commit: `8fc804fd112c634cd94a9ef207545c5440f47dea`
+- First pull request: `#29`
+- Provenance status: generic persistence gate; not a standalone invention or
+  novel mechanism
+- Claimed invention date: TBD

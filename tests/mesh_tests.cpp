@@ -3,6 +3,7 @@
 #include "interaction_observation.hpp"
 #include "bridge_confidence.hpp"
 #include "adaptive_bridge_policy.hpp"
+#include "bridge_persistence.hpp"
 
 #include <cassert>
 #include <cmath>
@@ -344,6 +345,199 @@ void test_adaptive_bridge_policy_contract() {
             "evidence must be monotonic in compatibility");
 }
 
+void test_bridge_persistence_contract() {
+    using AdaptiveMesh::BridgePersistence;
+    using AdaptiveMesh::PersistentBridgeRecommendation;
+    using AdaptiveMesh::AdaptiveBridgePolicy;
+    using AdaptiveMesh::BridgeConfidence;
+    using AdaptiveMesh::InteractionObservation;
+
+    static_assert(!std::is_default_constructible_v<BridgePersistence>);
+    static_assert(!std::is_constructible_v<BridgePersistence, std::size_t>);
+    static_assert(noexcept(std::declval<BridgePersistence&>().observe(
+        std::declval<const AdaptiveMesh::BridgePolicyEvidence&>())));
+    static_assert(noexcept(std::declval<BridgePersistence&>().reset()));
+
+    const AdaptiveBridgePolicy policy;
+    const BridgeConfidence fullConfidence(1.0);
+    const auto evidence = [&policy, &fullConfidence](double compatibility) {
+        return policy.evaluate(
+            InteractionObservation(compatibility), fullConfidence);
+    };
+
+    requireThrows<std::invalid_argument>([] {
+        static_cast<void>(BridgePersistence(0.5, 0.5, 2, 2));
+    }, "equal persistence thresholds must be rejected");
+    requireThrows<std::invalid_argument>([] {
+        static_cast<void>(BridgePersistence(0.5, 0.6, 2, 2));
+    }, "reversed persistence thresholds must be rejected");
+    requireThrows<std::invalid_argument>([] {
+        static_cast<void>(BridgePersistence(0.5, -0.01, 2, 2));
+    }, "negative release threshold must be rejected");
+    requireThrows<std::invalid_argument>([] {
+        static_cast<void>(BridgePersistence(1.01, 0.25, 2, 2));
+    }, "activation threshold above one must be rejected");
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const double infinity = std::numeric_limits<double>::infinity();
+    requireThrows<std::invalid_argument>([nan] {
+        static_cast<void>(BridgePersistence(nan, 0.25, 2, 2));
+    }, "NaN activation threshold must be rejected");
+    requireThrows<std::invalid_argument>([nan] {
+        static_cast<void>(BridgePersistence(0.5, nan, 2, 2));
+    }, "NaN release threshold must be rejected");
+    requireThrows<std::invalid_argument>([infinity] {
+        static_cast<void>(BridgePersistence(infinity, 0.25, 2, 2));
+    }, "positive infinite activation threshold must be rejected");
+    requireThrows<std::invalid_argument>([infinity] {
+        static_cast<void>(BridgePersistence(0.5, -infinity, 2, 2));
+    }, "negative infinite release threshold must be rejected");
+    requireThrows<std::invalid_argument>([infinity] {
+        static_cast<void>(BridgePersistence(0.5, infinity, 2, 2));
+    }, "positive infinite release threshold must be rejected");
+    requireThrows<std::invalid_argument>([] {
+        static_cast<void>(BridgePersistence(0.5, 0.2, 1, 2));
+    }, "activation sample count below two must be rejected");
+    requireThrows<std::invalid_argument>([] {
+        static_cast<void>(BridgePersistence(0.5, 0.2, 2, 1));
+    }, "release sample count below two must be rejected");
+
+    BridgePersistence boundaryPersistence(0.5, 0.25, 2, 2);
+    require(std::abs(evidence(0.625).value() - 0.25) < 1e-12,
+            "positive boundary fixture must produce +0.25 evidence");
+    require(boundaryPersistence.observe(evidence(0.75)) ==
+                PersistentBridgeRecommendation::PRESERVE,
+            "positive evidence at activation boundary must start a streak");
+    require(boundaryPersistence.observe(evidence(0.75)) ==
+                PersistentBridgeRecommendation::SUPPORT,
+            "positive evidence at activation boundary must confirm");
+    require(boundaryPersistence.observe(evidence(0.625)) ==
+                PersistentBridgeRecommendation::SUPPORT,
+            "positive evidence at release boundary must start release");
+    require(boundaryPersistence.observe(evidence(0.625)) ==
+                PersistentBridgeRecommendation::PRESERVE,
+            "positive evidence at release boundary must release support");
+
+    BridgePersistence negativeBoundaryPersistence(0.5, 0.25, 2, 2);
+    require(std::abs(evidence(0.375).value() + 0.25) < 1e-12,
+            "negative boundary fixture must produce -0.25 evidence");
+    require(negativeBoundaryPersistence.observe(evidence(0.25)) ==
+                PersistentBridgeRecommendation::PRESERVE,
+            "negative evidence at activation boundary must start a streak");
+    require(negativeBoundaryPersistence.observe(evidence(0.25)) ==
+                PersistentBridgeRecommendation::CONSTRAIN,
+            "negative evidence at activation boundary must confirm");
+    require(negativeBoundaryPersistence.observe(evidence(0.375)) ==
+                PersistentBridgeRecommendation::CONSTRAIN,
+            "negative evidence at release boundary must start release");
+    require(negativeBoundaryPersistence.observe(evidence(0.375)) ==
+                PersistentBridgeRecommendation::PRESERVE,
+            "negative evidence at release boundary must release constraint");
+
+    BridgePersistence resetPersistence(0.5, 0.25, 2, 2);
+    require(resetPersistence.observe(evidence(0.75)) ==
+                PersistentBridgeRecommendation::PRESERVE,
+            "partial activation must preserve");
+    require(resetPersistence.observe(evidence(0.5)) ==
+                PersistentBridgeRecommendation::PRESERVE,
+            "neutral evidence must clear partial activation");
+    require(resetPersistence.observe(evidence(0.75)) ==
+                PersistentBridgeRecommendation::PRESERVE,
+            "post-neutral activation must start a new streak");
+    require(resetPersistence.observe(evidence(0.75)) ==
+                PersistentBridgeRecommendation::SUPPORT,
+            "post-neutral activation must require two samples");
+
+    BridgePersistence reversalPersistence(0.5, 0.25, 2, 2);
+    require(reversalPersistence.observe(evidence(0.75)) ==
+                PersistentBridgeRecommendation::PRESERVE,
+            "initial positive candidate must preserve");
+    require(reversalPersistence.observe(evidence(0.25)) ==
+                PersistentBridgeRecommendation::PRESERVE,
+            "direction change must reset the old streak");
+    require(reversalPersistence.observe(evidence(0.25)) ==
+                PersistentBridgeRecommendation::CONSTRAIN,
+            "new negative candidate must require two samples");
+
+    BridgePersistence persistence(0.5, 0.25, 3, 2);
+    require(persistence.observe(evidence(0.0)) ==
+                PersistentBridgeRecommendation::PRESERVE,
+            "first negative evidence must preserve");
+    require(persistence.observe(evidence(0.0)) ==
+                PersistentBridgeRecommendation::PRESERVE,
+            "second negative evidence must preserve");
+    require(persistence.observe(evidence(0.0)) ==
+                PersistentBridgeRecommendation::CONSTRAIN,
+            "third negative evidence must constrain");
+
+    require(persistence.observe(evidence(0.5)) ==
+                PersistentBridgeRecommendation::CONSTRAIN,
+            "first release sample must preserve constrained state");
+    require(persistence.observe(evidence(0.5)) ==
+                PersistentBridgeRecommendation::PRESERVE,
+            "second release sample must return to preserve");
+    require(persistence.observe(evidence(1.0)) ==
+                PersistentBridgeRecommendation::PRESERVE,
+            "opposite direction must not jump directly to support");
+
+    BridgePersistence strengthenedReversal(0.5, 0.25, 2, 2);
+    require(strengthenedReversal.observe(evidence(1.0)) ==
+                PersistentBridgeRecommendation::PRESERVE,
+            "support activation sample must preserve");
+    require(strengthenedReversal.observe(evidence(1.0)) ==
+                PersistentBridgeRecommendation::SUPPORT,
+            "support must be initially confirmed");
+    require(strengthenedReversal.observe(evidence(0.05)) ==
+                PersistentBridgeRecommendation::SUPPORT,
+            "first opposite sample must only start release");
+    require(strengthenedReversal.observe(evidence(0.05)) ==
+                PersistentBridgeRecommendation::PRESERVE,
+            "second opposite sample must release to preserve");
+    require(strengthenedReversal.observe(evidence(0.05)) ==
+                PersistentBridgeRecommendation::PRESERVE,
+            "first post-release constrain sample must preserve");
+    require(strengthenedReversal.observe(evidence(0.05)) ==
+                PersistentBridgeRecommendation::CONSTRAIN,
+            "second post-release constrain sample must confirm constrain");
+
+    BridgePersistence supportPersistence(0.5, 0.25, 3, 2);
+    require(supportPersistence.observe(evidence(1.0)) ==
+                PersistentBridgeRecommendation::PRESERVE,
+            "first support sample must preserve");
+    require(supportPersistence.observe(evidence(1.0)) ==
+                PersistentBridgeRecommendation::PRESERVE,
+            "second support sample must preserve");
+    require(supportPersistence.observe(evidence(1.0)) ==
+                PersistentBridgeRecommendation::SUPPORT,
+            "third support sample must support");
+    require(supportPersistence.observe(evidence(1.0)) ==
+                PersistentBridgeRecommendation::SUPPORT,
+            "support recommendation must be level output");
+
+    require(supportPersistence.observe(evidence(1.0)) ==
+                PersistentBridgeRecommendation::SUPPORT,
+            "saturated support streak must remain a level output");
+
+    supportPersistence.reset();
+    require(supportPersistence.observe(evidence(1.0)) ==
+                PersistentBridgeRecommendation::PRESERVE,
+            "reset must clear confirmed state");
+
+    BridgePersistence isolatedA(0.5, 0.25, 2, 2);
+    BridgePersistence isolatedB(0.5, 0.25, 2, 2);
+    require(isolatedA.observe(evidence(1.0)) ==
+                PersistentBridgeRecommendation::PRESERVE,
+            "first isolated A sample must preserve");
+    require(isolatedB.observe(evidence(1.0)) ==
+                PersistentBridgeRecommendation::PRESERVE,
+            "first isolated B sample must preserve");
+    require(isolatedA.observe(evidence(1.0)) ==
+                PersistentBridgeRecommendation::SUPPORT,
+            "isolated A must confirm independently");
+    require(isolatedB.observe(evidence(0.5)) ==
+                PersistentBridgeRecommendation::PRESERVE,
+            "isolated B must retain independent pending state");
+}
+
 void populateLinearMesh(AdaptiveMesh::SpatialAdaptiveMesh& mesh, size_t nodeCount) {
     for (size_t nodeId = 0; nodeId < nodeCount; ++nodeId) {
         mesh.addNode(nodeId, {static_cast<double>(nodeId), 0.0, 0.0}, 0.0);
@@ -572,6 +766,7 @@ int main() {
         test_interaction_observation_contract();
         test_bridge_confidence_contract();
         test_adaptive_bridge_policy_contract();
+        test_bridge_persistence_contract();
         test_worker_configuration_is_deterministic();
         test_legacy_simulation_step_wrapper();
         test_post_commit_health_remains_finite_for_large_drift();

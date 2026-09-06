@@ -150,3 +150,18 @@ capacity delta, route score, or link-quality score. It does not perform
 estimation and does not apply persistence, recommendation, or transition
 semantics. Those belong to a future persistence/recommendation/transition
 layer.
+
+### BridgePersistence
+
+`AdaptiveMesh::BridgePersistence` is a standalone, caller-owned stateful gate
+that consumes only `BridgePolicyEvidence`. It applies explicit state-relative
+activation and release thresholds and saturating consecutive-sample counts to
+produce `PRESERVE`, `CONSTRAIN`, or `SUPPORT` recommendations.
+
+Its state is limited to the current recommendation, pending direction, and
+bounded counters. It has no bridge or topology ownership, timestamps, timers,
+measurement history, smoothing, adaptive thresholds, or transition effects.
+Recommendations move only through `PRESERVE`; this type does not mutate
+`SpatialBridge`, `BridgeStatus`, simulation state, or topology. It is a
+consecutive-direction persistence primitive, not a complete hysteresis
+architecture or a bridge transition layer.
