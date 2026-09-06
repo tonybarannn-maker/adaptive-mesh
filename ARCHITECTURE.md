@@ -132,3 +132,21 @@ guarantee of correctness.
 `BridgeConfidence` is not integrated into `SpatialBridge`, simulation,
 topology, capacity/status transitions, history, timestamps, smoothing,
 hysteresis, routing, RF, PHY, or MAC semantics.
+
+### AdaptiveBridgePolicy and BridgePolicyEvidence
+
+`AdaptiveMesh::AdaptiveBridgePolicy` is a stateless deterministic evaluator. It
+maps an `InteractionObservation` and a `BridgeConfidence` to typed signed
+`BridgePolicyEvidence` using:
+
+`E = (2C - 1)Q`
+
+where `C` is compatibility and `Q` is confidence. The resulting evidence is
+bounded to `[-1.0, 1.0]`; its sign indicates direction and its magnitude
+indicates normalized recommendation strength.
+
+`BridgePolicyEvidence` is not a recommendation enum, probability, utility,
+capacity delta, route score, or link-quality score. It does not perform
+estimation and does not apply persistence, recommendation, or transition
+semantics. Those belong to a future persistence/recommendation/transition
+layer.

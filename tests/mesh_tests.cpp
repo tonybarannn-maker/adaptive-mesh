@@ -2,6 +2,7 @@
 
 #include "interaction_observation.hpp"
 #include "bridge_confidence.hpp"
+#include "adaptive_bridge_policy.hpp"
 
 #include <cassert>
 #include <cmath>
@@ -271,6 +272,78 @@ void test_bridge_confidence_contract() {
     }, "out-of-range bridge confidence must be rejected");
 }
 
+void test_adaptive_bridge_policy_contract() {
+    using AdaptiveMesh::AdaptiveBridgePolicy;
+    using AdaptiveMesh::BridgeConfidence;
+    using AdaptiveMesh::BridgePolicyEvidence;
+    using AdaptiveMesh::InteractionObservation;
+
+    static_assert(!std::is_default_constructible_v<BridgePolicyEvidence>);
+    static_assert(!std::is_constructible_v<BridgePolicyEvidence, double>);
+    static_assert(noexcept(
+        std::declval<const BridgePolicyEvidence&>().value()));
+    static_assert(noexcept(
+        std::declval<const AdaptiveBridgePolicy&>().evaluate(
+            std::declval<const InteractionObservation&>(),
+            std::declval<const BridgeConfidence&>())));
+
+    const AdaptiveBridgePolicy policy;
+    const BridgeConfidence fullConfidence(1.0);
+
+    require(policy.evaluate(InteractionObservation(0.0), fullConfidence).value() == -1.0,
+            "zero compatibility must produce full negative evidence");
+    require(policy.evaluate(InteractionObservation(0.25), fullConfidence).value() == -0.5,
+            "quarter compatibility must produce negative evidence");
+    require(policy.evaluate(InteractionObservation(0.5), fullConfidence).value() == 0.0,
+            "neutral compatibility must produce zero evidence");
+    require(policy.evaluate(InteractionObservation(0.75), fullConfidence).value() == 0.5,
+            "three-quarter compatibility must produce positive evidence");
+    require(policy.evaluate(InteractionObservation(1.0), fullConfidence).value() == 1.0,
+            "unit compatibility must produce full positive evidence");
+
+    require(policy.evaluate(InteractionObservation(0.0), BridgeConfidence(0.0)).value() == 0.0,
+            "zero confidence must produce zero evidence");
+    require(policy.evaluate(InteractionObservation(0.5), BridgeConfidence(0.0)).value() == 0.0,
+            "zero confidence at neutral compatibility must produce zero evidence");
+    require(policy.evaluate(InteractionObservation(1.0), BridgeConfidence(0.0)).value() == 0.0,
+            "zero confidence at full compatibility must produce zero evidence");
+
+    const double lowerMagnitude =
+        policy.evaluate(InteractionObservation(0.75), BridgeConfidence(0.4)).value();
+    const double higherMagnitude =
+        policy.evaluate(InteractionObservation(0.75), BridgeConfidence(0.8)).value();
+    require(higherMagnitude > lowerMagnitude && higherMagnitude >= 0.0,
+            "positive evidence magnitude must increase with confidence");
+
+    const double lowerNegativeMagnitude =
+        policy.evaluate(InteractionObservation(0.25), BridgeConfidence(0.4)).value();
+    const double higherNegativeMagnitude =
+        policy.evaluate(InteractionObservation(0.25), BridgeConfidence(0.8)).value();
+    require(std::abs(lowerNegativeMagnitude + 0.2) < 1e-12,
+            "lower negative confidence must produce -0.2 evidence");
+    require(std::abs(higherNegativeMagnitude + 0.4) < 1e-12,
+            "higher negative confidence must produce -0.4 evidence");
+    require(higherNegativeMagnitude < lowerNegativeMagnitude,
+            "negative evidence must strengthen with confidence");
+
+    const double negativeEvidence =
+        policy.evaluate(InteractionObservation(0.25), BridgeConfidence(0.8)).value();
+    require(std::abs(negativeEvidence + higherMagnitude) < 1e-12,
+            "complementary compatibility must produce symmetric evidence");
+
+    const double boundedEvidence =
+        policy.evaluate(InteractionObservation(0.9), BridgeConfidence(0.9)).value();
+    require(boundedEvidence >= -1.0 && boundedEvidence <= 1.0,
+            "policy evidence must remain bounded in [-1, 1]");
+
+    const double lowCompatibility =
+        policy.evaluate(InteractionObservation(0.2), fullConfidence).value();
+    const double highCompatibility =
+        policy.evaluate(InteractionObservation(0.8), fullConfidence).value();
+    require(highCompatibility > lowCompatibility,
+            "evidence must be monotonic in compatibility");
+}
+
 void populateLinearMesh(AdaptiveMesh::SpatialAdaptiveMesh& mesh, size_t nodeCount) {
     for (size_t nodeId = 0; nodeId < nodeCount; ++nodeId) {
         mesh.addNode(nodeId, {static_cast<double>(nodeId), 0.0, 0.0}, 0.0);
@@ -498,6 +571,7 @@ int main() {
         test_numeric_input_contract();
         test_interaction_observation_contract();
         test_bridge_confidence_contract();
+        test_adaptive_bridge_policy_contract();
         test_worker_configuration_is_deterministic();
         test_legacy_simulation_step_wrapper();
         test_post_commit_health_remains_finite_for_large_drift();
