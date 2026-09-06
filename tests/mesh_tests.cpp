@@ -1,6 +1,7 @@
 ﻿#include "system_architecture.hpp"
 
 #include "interaction_observation.hpp"
+#include "bridge_confidence.hpp"
 
 #include <cassert>
 #include <cmath>
@@ -9,6 +10,8 @@
 #include <iostream>
 #include <limits>
 #include <stdexcept>
+#include <type_traits>
+#include <utility>
 
 namespace {
 
@@ -225,6 +228,47 @@ void test_interaction_observation_contract() {
     requireThrows<std::invalid_argument>([] {
         static_cast<void>(InteractionObservation(1.001));
     }, "out-of-range interaction compatibility must be rejected");
+}
+
+void test_bridge_confidence_contract() {
+    using AdaptiveMesh::BridgeConfidence;
+
+    static_assert(!std::is_default_constructible_v<BridgeConfidence>);
+    static_assert(std::is_constructible_v<BridgeConfidence, double>);
+    static_assert(!std::is_convertible_v<double, BridgeConfidence>);
+    static_assert(noexcept(std::declval<const BridgeConfidence&>().value()));
+
+    const BridgeConfidence zero(0.0);
+    require(zero.value() == 0.0,
+            "zero bridge confidence must be preserved");
+
+    const BridgeConfidence one(1.0);
+    require(one.value() == 1.0,
+            "unit bridge confidence must be preserved");
+
+    const BridgeConfidence midpoint(0.625);
+    require(midpoint.value() == 0.625,
+            "intermediate bridge confidence must be preserved");
+
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const double infinity = std::numeric_limits<double>::infinity();
+    const double negativeInfinity = -infinity;
+
+    requireThrows<std::invalid_argument>([nan] {
+        static_cast<void>(BridgeConfidence(nan));
+    }, "NaN bridge confidence must be rejected");
+    requireThrows<std::invalid_argument>([infinity] {
+        static_cast<void>(BridgeConfidence(infinity));
+    }, "positive infinite bridge confidence must be rejected");
+    requireThrows<std::invalid_argument>([negativeInfinity] {
+        static_cast<void>(BridgeConfidence(negativeInfinity));
+    }, "negative infinite bridge confidence must be rejected");
+    requireThrows<std::invalid_argument>([] {
+        static_cast<void>(BridgeConfidence(-0.001));
+    }, "negative bridge confidence must be rejected");
+    requireThrows<std::invalid_argument>([] {
+        static_cast<void>(BridgeConfidence(1.001));
+    }, "out-of-range bridge confidence must be rejected");
 }
 
 void populateLinearMesh(AdaptiveMesh::SpatialAdaptiveMesh& mesh, size_t nodeCount) {
@@ -453,6 +497,7 @@ int main() {
         test_bulk_connection_contract();
         test_numeric_input_contract();
         test_interaction_observation_contract();
+        test_bridge_confidence_contract();
         test_worker_configuration_is_deterministic();
         test_legacy_simulation_step_wrapper();
         test_post_commit_health_remains_finite_for_large_drift();

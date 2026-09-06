@@ -117,3 +117,18 @@ finite range `[0.0, 1.0]`.
 The type is an infrastructure primitive only. It is not stored in
 `SpatialBridge`, does not participate in simulation or topology updates, and
 does not encode history, confidence, persistence, trend, or hysteresis.
+
+### BridgeConfidence
+
+`AdaptiveMesh::BridgeConfidence` is a standalone, construction-validated value
+type with a read-only public interface for one normalized confidence value. Its
+sole field is `value`, constrained to the finite range `[0.0, 1.0]`.
+
+The type represents confidence as supplied by a future boundary producer; it
+does not define confidence estimation. A value of `0.0` means no normalized
+confidence, while `1.0` means maximal normalized confidence and is not a
+guarantee of correctness.
+
+`BridgeConfidence` is not integrated into `SpatialBridge`, simulation,
+topology, capacity/status transitions, history, timestamps, smoothing,
+hysteresis, routing, RF, PHY, or MAC semantics.
