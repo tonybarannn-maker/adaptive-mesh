@@ -4,6 +4,7 @@
 #include "bridge_confidence.hpp"
 #include "adaptive_bridge_policy.hpp"
 #include "bridge_persistence.hpp"
+#include "bridge_transition_authorization.hpp"
 
 #include <cassert>
 #include <cmath>
@@ -538,6 +539,86 @@ void test_bridge_persistence_contract() {
             "isolated B must retain independent pending state");
 }
 
+void test_bridge_transition_authorization_contract() {
+    using AdaptiveMesh::BridgeTransitionAuthorizationPolicy;
+    using AdaptiveMesh::BridgeTransitionIntent;
+    using AdaptiveMesh::BridgeTransitionPermissions;
+    using AdaptiveMesh::PersistentBridgeRecommendation;
+
+    static_assert(!std::is_default_constructible_v<BridgeTransitionPermissions>);
+    static_assert(std::is_constructible_v<BridgeTransitionPermissions, bool, bool>);
+    static_assert(!std::is_assignable_v<BridgeTransitionPermissions&, BridgeTransitionPermissions>);
+    static_assert(noexcept(BridgeTransitionPermissions(true, true)));
+    static_assert(noexcept(std::declval<const BridgeTransitionPermissions&>().allowsConstrain()));
+    static_assert(noexcept(std::declval<const BridgeTransitionPermissions&>().allowsSupport()));
+    static_assert(noexcept(std::declval<const BridgeTransitionAuthorizationPolicy&>().evaluate(
+        std::declval<PersistentBridgeRecommendation>(),
+        std::declval<const BridgeTransitionPermissions&>())));
+
+    const BridgeTransitionAuthorizationPolicy policy;
+    const BridgeTransitionPermissions maximum(true, true);
+    const BridgeTransitionPermissions none(false, false);
+    const BridgeTransitionPermissions constrainOnly(true, false);
+    const BridgeTransitionPermissions supportOnly(false, true);
+
+    const PersistentBridgeRecommendation recommendations[] = {
+        PersistentBridgeRecommendation::PRESERVE,
+        PersistentBridgeRecommendation::CONSTRAIN,
+        PersistentBridgeRecommendation::SUPPORT};
+    const BridgeTransitionPermissions permissions[] = {
+        none, constrainOnly, supportOnly, maximum};
+    const BridgeTransitionIntent expected[3][4] = {
+        {BridgeTransitionIntent::PRESERVE, BridgeTransitionIntent::PRESERVE,
+         BridgeTransitionIntent::PRESERVE, BridgeTransitionIntent::PRESERVE},
+        {BridgeTransitionIntent::PRESERVE, BridgeTransitionIntent::CONSTRAIN,
+         BridgeTransitionIntent::PRESERVE, BridgeTransitionIntent::CONSTRAIN},
+        {BridgeTransitionIntent::PRESERVE, BridgeTransitionIntent::PRESERVE,
+         BridgeTransitionIntent::SUPPORT, BridgeTransitionIntent::SUPPORT}};
+
+    for (std::size_t recommendationIndex = 0;
+         recommendationIndex < 3;
+         ++recommendationIndex) {
+        for (std::size_t permissionIndex = 0;
+             permissionIndex < 4;
+             ++permissionIndex) {
+            require(policy.evaluate(
+                        recommendations[recommendationIndex],
+                        permissions[permissionIndex]) ==
+                        expected[recommendationIndex][permissionIndex],
+                    "authorization truth table mismatch");
+        }
+    }
+
+    const auto invalidRecommendation =
+        static_cast<PersistentBridgeRecommendation>(99);
+    require(policy.evaluate(invalidRecommendation, maximum) ==
+                BridgeTransitionIntent::PRESERVE,
+            "invalid recommendation must fail closed");
+
+    require(policy.evaluate(PersistentBridgeRecommendation::CONSTRAIN, none) ==
+                BridgeTransitionIntent::PRESERVE,
+            "denied constrain must preserve");
+    require(policy.evaluate(PersistentBridgeRecommendation::SUPPORT, none) ==
+                BridgeTransitionIntent::PRESERVE,
+            "denied support must preserve");
+    require(policy.evaluate(PersistentBridgeRecommendation::CONSTRAIN, maximum) ==
+                BridgeTransitionIntent::CONSTRAIN,
+            "allowed constrain direction must not invert");
+    require(policy.evaluate(PersistentBridgeRecommendation::SUPPORT, maximum) ==
+                BridgeTransitionIntent::SUPPORT,
+            "allowed support direction must not invert");
+
+    require(policy.evaluate(PersistentBridgeRecommendation::CONSTRAIN, maximum) ==
+                policy.evaluate(PersistentBridgeRecommendation::CONSTRAIN, constrainOnly),
+            "adding permissions must not block constrain");
+    require(policy.evaluate(PersistentBridgeRecommendation::SUPPORT, maximum) ==
+                policy.evaluate(PersistentBridgeRecommendation::SUPPORT, supportOnly),
+            "adding permissions must not block support");
+    require(policy.evaluate(PersistentBridgeRecommendation::PRESERVE, maximum) ==
+                BridgeTransitionIntent::PRESERVE,
+            "preserve recommendation must be idempotent");
+}
+
 void populateLinearMesh(AdaptiveMesh::SpatialAdaptiveMesh& mesh, size_t nodeCount) {
     for (size_t nodeId = 0; nodeId < nodeCount; ++nodeId) {
         mesh.addNode(nodeId, {static_cast<double>(nodeId), 0.0, 0.0}, 0.0);
@@ -767,6 +848,7 @@ int main() {
         test_bridge_confidence_contract();
         test_adaptive_bridge_policy_contract();
         test_bridge_persistence_contract();
+        test_bridge_transition_authorization_contract();
         test_worker_configuration_is_deterministic();
         test_legacy_simulation_step_wrapper();
         test_post_commit_health_remains_finite_for_large_drift();
