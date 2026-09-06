@@ -165,3 +165,15 @@ Recommendations move only through `PRESERVE`; this type does not mutate
 `SpatialBridge`, `BridgeStatus`, simulation state, or topology. It is a
 consecutive-direction persistence primitive, not a complete hysteresis
 architecture or a bridge transition layer.
+
+### Bridge transition authorization
+
+`BridgeTransitionPermissions` is an explicitly resolved, read-only permission
+value. `BridgeTransitionAuthorizationPolicy` is a stateless deterministic
+authorization seam that maps a persistent recommendation and permissions to
+an intent without changing direction. Denied or invalid recommendations fail
+closed to `PRESERVE`; permissions do not create recommendations.
+
+This seam does not define permission provenance, invariant or resilience
+evaluation, transition magnitude, bridge/status mutation, simulation,
+topology, routing, transport, or RF/PHY/MAC behavior.

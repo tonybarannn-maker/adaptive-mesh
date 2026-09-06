@@ -72,6 +72,17 @@ This baseline intentionally does not design or specify future SOAM v2
 mechanisms. Their architecture, APIs, algorithms, thresholds, state models,
 and implementation details remain outside the scope of this document and PR-1.
 
+## PR-6 authorization boundary
+
+PR-6 accepts only an explicitly resolved `BridgeTransitionPermissions` value
+and a `PersistentBridgeRecommendation`. The policy returns a direction-
+preserving intent or fail-closed `PRESERVE`; it does not produce permissions,
+execute actions, or mutate bridges and topology.
+
+This boundary has no routing, handover, link enable/disable, RF measurement,
+transport, PHY, or MAC semantics. It is an engineering separation, not a
+patentability, non-infringement, or freedom-to-operate conclusion.
+
 ## PR-5 persistence boundary
 
 Threshold and consecutive-sample persistence is a known control primitive and

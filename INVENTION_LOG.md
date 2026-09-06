@@ -140,3 +140,21 @@ Unknown data must remain `TBD` or `not yet verified` until evidence is available
 - Provenance status: generic persistence gate; not a standalone invention or
   novel mechanism
 - Claimed invention date: TBD
+
+### Bridge transition authorization seam
+
+- Documentation date: 2026-09-06
+- Role: standalone authorization infrastructure primitive
+- Input: persistent recommendation plus explicitly resolved directional
+  permissions
+- Semantics: fail-closed, direction-preserving intent authorization only
+- Integration semantics: no permission producer, bridge/status mutation,
+  simulation, topology, routing, transport, or RF/PHY/MAC behavior
+- Provenance status: authorization seam; no novelty or patentability claim
+- Claimed invention date: TBD
+
+### Bridge transition authorization implementation
+
+- Known first implementation commit: `6aceed3c2d996bb9436c83e9f41b6732e8c03f24`
+- First pull request: `#30`
+- Claimed invention date: TBD
