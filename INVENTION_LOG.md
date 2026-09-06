@@ -135,8 +135,8 @@ Unknown data must remain `TBD` or `not yet verified` until evidence is available
 - Integration semantics: none; no bridge mutation, topology integration,
   timestamps, timers, smoothing, adaptive thresholds, or transport/RF/PHY/MAC
   inputs
-- Known first implementation commit/PR: TBD until the implementation commit is
-  created
+- Known first implementation commit: `8fc804fd112c634cd94a9ef207545c5440f47dea`
+- First pull request: `#29`
 - Provenance status: generic persistence gate; not a standalone invention or
   novel mechanism
 - Claimed invention date: TBD

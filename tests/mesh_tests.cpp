@@ -433,6 +433,31 @@ void test_bridge_persistence_contract() {
                 PersistentBridgeRecommendation::PRESERVE,
             "negative evidence at release boundary must release constraint");
 
+    BridgePersistence resetPersistence(0.5, 0.25, 2, 2);
+    require(resetPersistence.observe(evidence(0.75)) ==
+                PersistentBridgeRecommendation::PRESERVE,
+            "partial activation must preserve");
+    require(resetPersistence.observe(evidence(0.5)) ==
+                PersistentBridgeRecommendation::PRESERVE,
+            "neutral evidence must clear partial activation");
+    require(resetPersistence.observe(evidence(0.75)) ==
+                PersistentBridgeRecommendation::PRESERVE,
+            "post-neutral activation must start a new streak");
+    require(resetPersistence.observe(evidence(0.75)) ==
+                PersistentBridgeRecommendation::SUPPORT,
+            "post-neutral activation must require two samples");
+
+    BridgePersistence reversalPersistence(0.5, 0.25, 2, 2);
+    require(reversalPersistence.observe(evidence(0.75)) ==
+                PersistentBridgeRecommendation::PRESERVE,
+            "initial positive candidate must preserve");
+    require(reversalPersistence.observe(evidence(0.25)) ==
+                PersistentBridgeRecommendation::PRESERVE,
+            "direction change must reset the old streak");
+    require(reversalPersistence.observe(evidence(0.25)) ==
+                PersistentBridgeRecommendation::CONSTRAIN,
+            "new negative candidate must require two samples");
+
     BridgePersistence persistence(0.5, 0.25, 3, 2);
     require(persistence.observe(evidence(0.0)) ==
                 PersistentBridgeRecommendation::PRESERVE,
