@@ -372,41 +372,68 @@ void test_bridge_persistence_contract() {
         static_cast<void>(BridgePersistence(0.5, 0.6, 2, 2));
     }, "reversed persistence thresholds must be rejected");
     requireThrows<std::invalid_argument>([] {
+        static_cast<void>(BridgePersistence(0.5, -0.01, 2, 2));
+    }, "negative release threshold must be rejected");
+    requireThrows<std::invalid_argument>([] {
+        static_cast<void>(BridgePersistence(1.01, 0.25, 2, 2));
+    }, "activation threshold above one must be rejected");
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const double infinity = std::numeric_limits<double>::infinity();
+    requireThrows<std::invalid_argument>([nan] {
+        static_cast<void>(BridgePersistence(nan, 0.25, 2, 2));
+    }, "NaN activation threshold must be rejected");
+    requireThrows<std::invalid_argument>([nan] {
+        static_cast<void>(BridgePersistence(0.5, nan, 2, 2));
+    }, "NaN release threshold must be rejected");
+    requireThrows<std::invalid_argument>([infinity] {
+        static_cast<void>(BridgePersistence(infinity, 0.25, 2, 2));
+    }, "positive infinite activation threshold must be rejected");
+    requireThrows<std::invalid_argument>([infinity] {
+        static_cast<void>(BridgePersistence(0.5, -infinity, 2, 2));
+    }, "negative infinite release threshold must be rejected");
+    requireThrows<std::invalid_argument>([infinity] {
+        static_cast<void>(BridgePersistence(0.5, infinity, 2, 2));
+    }, "positive infinite release threshold must be rejected");
+    requireThrows<std::invalid_argument>([] {
         static_cast<void>(BridgePersistence(0.5, 0.2, 1, 2));
     }, "activation sample count below two must be rejected");
     requireThrows<std::invalid_argument>([] {
         static_cast<void>(BridgePersistence(0.5, 0.2, 2, 1));
     }, "release sample count below two must be rejected");
 
-    BridgePersistence boundaryPersistence(0.5, 0.2, 2, 2);
+    BridgePersistence boundaryPersistence(0.5, 0.25, 2, 2);
+    require(std::abs(evidence(0.625).value() - 0.25) < 1e-12,
+            "positive boundary fixture must produce +0.25 evidence");
     require(boundaryPersistence.observe(evidence(0.75)) ==
                 PersistentBridgeRecommendation::PRESERVE,
             "positive evidence at activation boundary must start a streak");
     require(boundaryPersistence.observe(evidence(0.75)) ==
                 PersistentBridgeRecommendation::SUPPORT,
             "positive evidence at activation boundary must confirm");
-    require(boundaryPersistence.observe(evidence(0.6)) ==
+    require(boundaryPersistence.observe(evidence(0.625)) ==
                 PersistentBridgeRecommendation::SUPPORT,
             "positive evidence at release boundary must start release");
-    require(boundaryPersistence.observe(evidence(0.6)) ==
+    require(boundaryPersistence.observe(evidence(0.625)) ==
                 PersistentBridgeRecommendation::PRESERVE,
             "positive evidence at release boundary must release support");
 
-    BridgePersistence negativeBoundaryPersistence(0.5, 0.2, 2, 2);
+    BridgePersistence negativeBoundaryPersistence(0.5, 0.25, 2, 2);
+    require(std::abs(evidence(0.375).value() + 0.25) < 1e-12,
+            "negative boundary fixture must produce -0.25 evidence");
     require(negativeBoundaryPersistence.observe(evidence(0.25)) ==
                 PersistentBridgeRecommendation::PRESERVE,
             "negative evidence at activation boundary must start a streak");
     require(negativeBoundaryPersistence.observe(evidence(0.25)) ==
                 PersistentBridgeRecommendation::CONSTRAIN,
             "negative evidence at activation boundary must confirm");
-    require(negativeBoundaryPersistence.observe(evidence(0.4)) ==
+    require(negativeBoundaryPersistence.observe(evidence(0.375)) ==
                 PersistentBridgeRecommendation::CONSTRAIN,
             "negative evidence at release boundary must start release");
-    require(negativeBoundaryPersistence.observe(evidence(0.4)) ==
+    require(negativeBoundaryPersistence.observe(evidence(0.375)) ==
                 PersistentBridgeRecommendation::PRESERVE,
             "negative evidence at release boundary must release constraint");
 
-    BridgePersistence persistence(0.5, 0.2, 3, 2);
+    BridgePersistence persistence(0.5, 0.25, 3, 2);
     require(persistence.observe(evidence(0.0)) ==
                 PersistentBridgeRecommendation::PRESERVE,
             "first negative evidence must preserve");
@@ -427,7 +454,27 @@ void test_bridge_persistence_contract() {
                 PersistentBridgeRecommendation::PRESERVE,
             "opposite direction must not jump directly to support");
 
-    BridgePersistence supportPersistence(0.5, 0.2, 3, 2);
+    BridgePersistence strengthenedReversal(0.5, 0.25, 2, 2);
+    require(strengthenedReversal.observe(evidence(1.0)) ==
+                PersistentBridgeRecommendation::PRESERVE,
+            "support activation sample must preserve");
+    require(strengthenedReversal.observe(evidence(1.0)) ==
+                PersistentBridgeRecommendation::SUPPORT,
+            "support must be initially confirmed");
+    require(strengthenedReversal.observe(evidence(0.05)) ==
+                PersistentBridgeRecommendation::SUPPORT,
+            "first opposite sample must only start release");
+    require(strengthenedReversal.observe(evidence(0.05)) ==
+                PersistentBridgeRecommendation::PRESERVE,
+            "second opposite sample must release to preserve");
+    require(strengthenedReversal.observe(evidence(0.05)) ==
+                PersistentBridgeRecommendation::PRESERVE,
+            "first post-release constrain sample must preserve");
+    require(strengthenedReversal.observe(evidence(0.05)) ==
+                PersistentBridgeRecommendation::CONSTRAIN,
+            "second post-release constrain sample must confirm constrain");
+
+    BridgePersistence supportPersistence(0.5, 0.25, 3, 2);
     require(supportPersistence.observe(evidence(1.0)) ==
                 PersistentBridgeRecommendation::PRESERVE,
             "first support sample must preserve");
@@ -450,8 +497,8 @@ void test_bridge_persistence_contract() {
                 PersistentBridgeRecommendation::PRESERVE,
             "reset must clear confirmed state");
 
-    BridgePersistence isolatedA(0.5, 0.2, 2, 2);
-    BridgePersistence isolatedB(0.5, 0.2, 2, 2);
+    BridgePersistence isolatedA(0.5, 0.25, 2, 2);
+    BridgePersistence isolatedB(0.5, 0.25, 2, 2);
     require(isolatedA.observe(evidence(1.0)) ==
                 PersistentBridgeRecommendation::PRESERVE,
             "first isolated A sample must preserve");
