@@ -323,6 +323,27 @@ namespace AdaptiveMesh {
                     1.0 - (drift / node.invariant.maxEpsilon)));
         }
 
+        [[nodiscard]] static SignalCategory evaluateSignalUncheckedInvariant(
+            double candidateState,
+            double healthIndex,
+            const IdentityInvariant& invariant)
+        {
+            requireFinite(candidateState, "candidateState");
+
+            const double deltaFromBase =
+                std::abs(candidateState - invariant.baseline);
+
+            if (deltaFromBase > invariant.maxEpsilon) {
+                return SignalCategory::DESTRUCTIVE_DRIFT;
+            }
+
+            if (healthIndex > 0.7 && deltaFromBase > 1.2) {
+                return SignalCategory::CREATIVE_SIGNAL;
+            }
+
+            return SignalCategory::NOISE;
+        }
+
         void runNodeRange(size_t firstNode, size_t lastNode,
                           std::vector<double>& outputStates,
                           std::vector<std::vector<double>>& bridgeCapacityOutput,
@@ -338,8 +359,10 @@ namespace AdaptiveMesh {
                     auto& neighbor = nodes[static_cast<size_t>(bridge.targetNodeId)];
                     double neighborState = neighbor.state.load();
                     double deltaS = neighborState - currentState;
-                    SignalCategory category = node.metaEvaluator.evaluate(
-                        currentState + deltaS, node.healthIndex.load(), node.invariant);
+                    SignalCategory category = evaluateSignalUncheckedInvariant(
+                        currentState + deltaS,
+                        node.healthIndex.load(),
+                        node.invariant);
                     SpatialBridge nextBridge = bridge;
                     nextBridge.updateBridgeState(category);
                     if (!std::isfinite(nextBridge.capacity)) {
