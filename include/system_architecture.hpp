@@ -138,7 +138,7 @@ namespace AdaptiveMesh {
             }
         }
 
-        [[nodiscard]] double getEffectiveTransmission() const {
+        [[nodiscard]] double getEffectiveCoupling() const {
             requireFinite(distance, "bridge distance");
             requireFinite(orientationWeight, "bridge orientationWeight");
             requireFinite(capacity, "bridge capacity");
@@ -152,9 +152,13 @@ namespace AdaptiveMesh {
                 throw std::invalid_argument("bridge capacity must be in [0, 1]");
             }
             const double spatialAttenuation = 1.0 / (1.0 + 0.1 * distance);
-            const double transmission = capacity * spatialAttenuation * orientationWeight;
-            requireFinite(transmission, "effective transmission");
-            return transmission;
+            const double coupling = capacity * spatialAttenuation * orientationWeight;
+            requireFinite(coupling, "effective coupling");
+            return coupling;
+        }
+
+        [[nodiscard]] double getEffectiveTransmission() const {
+            return getEffectiveCoupling();
         }
     };
 
@@ -301,7 +305,7 @@ namespace AdaptiveMesh {
             return std::min(requestedWorkers, nodes.size());
         }
 
-        [[nodiscard]] static double computeEffectiveTransmissionUnchecked(
+        [[nodiscard]] static double computeEffectiveCouplingUnchecked(
             const SpatialBridge& bridge) noexcept
         {
             const double spatialAttenuation =
@@ -379,7 +383,7 @@ namespace AdaptiveMesh {
                         bridgeStatusOutput[i][bridgeIndex] = nextBridge.status;
                     }
                     diffusionSum +=
-                        computeEffectiveTransmissionUnchecked(nextBridge) * deltaS;
+                        computeEffectiveCouplingUnchecked(nextBridge) * deltaS;
                 }
                 outputStates[i] = currentState + alpha * diffusionSum;
             }

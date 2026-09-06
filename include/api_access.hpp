@@ -87,7 +87,7 @@ inline void validateBridge(const SpatialBridge& bridge) {
     if (bridge.targetNodeId < 0) {
         throw std::invalid_argument("bridge targetNodeId must be non-negative");
     }
-    static_cast<void>(bridge.getEffectiveTransmission());
+    static_cast<void>(bridge.getEffectiveCoupling());
 }
 
 } // namespace AdaptiveMesh::api
