@@ -111,3 +111,15 @@ Unknown data must remain `TBD` or `not yet verified` until evidence is available
 - Provenance status: scalar domain primitive; not a standalone invention or
   novel mechanism
 - Claimed invention date: TBD
+
+### AdaptiveBridgePolicy and BridgePolicyEvidence
+
+- Documentation date: 2026-09-06
+- Role: infrastructure/domain primitive and stateless deterministic evaluator
+- Formula: `E = (2C - 1)Q`, with evidence bounded to `[-1.0, 1.0]`
+- Estimation, persistence, recommendation, and transition semantics: none
+- Known first implementation commit/PR: TBD until the implementation commit is
+  created
+- Provenance status: bounded evidence representation; not a standalone
+  invention or novel mechanism
+- Claimed invention date: TBD
