@@ -98,3 +98,16 @@ Unknown data must remain `TBD` or `not yet verified` until evidence is available
 - Provenance status: new repository type introduced by PR-2; historical
   provenance review remains separate
 - Claimed invention date: TBD
+
+### BridgeConfidence
+
+- Documentation date: 2026-09-06
+- Role: infrastructure/domain primitive / construction-validated representation
+- Semantics: one non-temporal finite normalized confidence value in `[0.0, 1.0]`
+- Estimation semantics: none; confidence estimation remains a future boundary
+  producer responsibility
+- Known first implementation commit/PR: TBD until the implementation commit is
+  created
+- Provenance status: scalar domain primitive; not a standalone invention or
+  novel mechanism
+- Claimed invention date: TBD
