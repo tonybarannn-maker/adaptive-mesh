@@ -6,6 +6,10 @@
 
 namespace AdaptiveMesh {
 
+namespace detail {
+class ProductionTransitionConstructionAccess;
+}
+
 enum class RequestedTransitionDirection {
     constrain,
     support
@@ -59,6 +63,7 @@ private:
     std::size_t targetNodeId_;
     std::uint64_t generation_;
 
+    friend class detail::ProductionTransitionConstructionAccess;
 };
 
 class ProductionStateVersion final {
@@ -74,6 +79,7 @@ private:
 
     std::uint64_t opaqueVersion_;
 
+    friend class detail::ProductionTransitionConstructionAccess;
 };
 
 class ProductionTransitionClassId final {
@@ -89,6 +95,7 @@ private:
 
     std::uint64_t opaqueClassId_;
 
+    friend class detail::ProductionTransitionConstructionAccess;
 };
 
 class ProductionTransitionRequestBinding final {
@@ -133,6 +140,7 @@ private:
     ProductionTransitionClassId transitionClass_;
     ProductionStateVersion stateVersion_;
 
+    friend class detail::ProductionTransitionConstructionAccess;
 };
 
 class PermissionPrerequisiteEvidence final {
@@ -156,6 +164,7 @@ private:
     ProductionTransitionRequestBinding context_;
     bool satisfied_;
 
+    friend class detail::ProductionTransitionConstructionAccess;
 };
 
 class InvariantPrerequisiteEvidence final {
@@ -179,6 +188,7 @@ private:
     ProductionTransitionRequestBinding context_;
     bool satisfied_;
 
+    friend class detail::ProductionTransitionConstructionAccess;
 };
 
 class ResiliencePrerequisiteEvidence final {
@@ -202,6 +212,7 @@ private:
     ProductionTransitionRequestBinding context_;
     bool satisfied_;
 
+    friend class detail::ProductionTransitionConstructionAccess;
 };
 
 class FreshnessPrerequisiteEvidence final {
@@ -225,6 +236,7 @@ private:
     ProductionTransitionRequestBinding context_;
     bool satisfied_;
 
+    friend class detail::ProductionTransitionConstructionAccess;
 };
 
 class RevalidationPrerequisiteEvidence final {
@@ -248,6 +260,7 @@ private:
     ProductionTransitionRequestBinding context_;
     bool satisfied_;
 
+    friend class detail::ProductionTransitionConstructionAccess;
 };
 
 struct ProductionTransitionPrerequisiteSet {
