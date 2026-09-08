@@ -256,7 +256,7 @@ implementation.
 - Mutation semantics: none. K12-I1 creates no topology, bridge, node-state, or
   execution path.
 - KIKO/K9/K10 authority promotion: none.
-- First implementation commit: TBD until committed.
+- First implementation commit: `9e4bb77bd46ebbf16f98965e68805833940ca242`.
 - First pull request: TBD.
 - Originality/prior-art review: required as a separate K12 gate.
 - Preliminary FTO/design-around review: required as a separate K12 gate.
