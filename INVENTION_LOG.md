@@ -158,3 +158,68 @@ Unknown data must remain `TBD` or `not yet verified` until evidence is available
 - Known first implementation commit: `6aceed3c2d996bb9436c83e9f41b6732e8c03f24`
 - First pull request: `#30`
 - Claimed invention date: TBD
+
+### K11 Production Transition Eligibility boundary
+
+- Documentation date: 2026-09-08
+- Canonical implementation baseline:
+  `0083c69647129876f467fca52e8652f01f3670bd`
+- Design lineage: K11-D1 repository/API audit; K11-D2 authority-boundary
+  threat model; K11-D3 eligibility API proposal; K11-D3.1 binding/evidence
+  producer contract; K11-D3.2 ownership/versioning review; K11-D4 API freeze.
+- Role: eligibility-only boundary between validated production prerequisite
+  evidence and any future transition-authority consideration.
+- Central separation:
+  recommendation != permission != prerequisite evidence != eligibility !=
+  authority != mutation.
+- Restricted-origin design: public K11 types expose inspection/evaluation
+  semantics without a supported public evidence/request minting API.
+- Test construction: synthetic privileged fixture access is confined to
+  `tests/internal/production_transition_eligibility_test_access.hpp`; it is not
+  a production evidence producer.
+- Diagnostic semantics: deterministic fail-closed precedence with all
+  context-component mismatches represented publicly as `binding_mismatch`.
+- Integration semantics: no authority object, executor, topology/state
+  mutation, KIKO-to-SOAM-Core coupling, K9 input, or K10 shadow promotion.
+- Evidence status: correctness, compile-separation, isolation, and regression
+  evidence must be captured before commit authorization.
+- First implementation commit: `040e3cf4da1a090523d86920798c70c49166cad4`
+- First pull request: TBD
+- Originality/prior-art review: preliminary review complete; see K11
+  preliminary IP gate status below.
+- Preliminary FTO/design-around review: preliminary pass with mandatory
+  design-around constraints; professional FTO not performed.
+- Patentability/non-infringement claim: none.
+
+### K11 — Preliminary IP gate status
+
+- K11-IP1 = preliminary originality/prior-art review complete
+- K11-IP2 = preliminary pass with mandatory design-around constraints
+- individual primitives = crowded/prior-art-adjacent
+- full composition = not found in this preliminary pass
+- novelty = not established
+- professional FTO = not performed
+- claimed invention date = TBD
+
+The preliminary review found no complete literal mapping in the reviewed
+active US independent claims.
+
+This is a preliminary search result only. It does not establish novelty,
+non-obviousness, patentability, validity, freedom-to-operate,
+non-infringement, or commercialization clearance.
+
+Mandatory K11 design-around constraints DA-1 through DA-12 are recorded in
+`docs/k11-production-transition-eligibility.md`.
+
+The boundary remains:
+
+recommendation != permission != prerequisite evidence != eligibility !=
+transition authority != mutation
+
+In particular, K11 ends at:
+
+`eligible_for_authority_consideration -> STOP`
+
+Any future eligibility-to-authority, credential, capability, execution, or
+mutation mechanism requires a new architecture/IP/FTO gate before
+implementation.
