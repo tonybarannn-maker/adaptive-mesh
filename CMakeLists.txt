@@ -47,6 +47,8 @@ target_include_directories(adaptive_mesh INTERFACE
 option(BUILD_TESTS "Build unit tests" ON)
 if(BUILD_TESTS)
     enable_testing()
+    find_package(Threads REQUIRED)
+
     add_executable(mesh_tests tests/mesh_tests.cpp)
     target_link_libraries(mesh_tests PRIVATE adaptive_mesh)
     add_test(NAME run_mesh_tests COMMAND mesh_tests)
@@ -97,6 +99,68 @@ if(BUILD_TESTS)
     )
     set_tests_properties(
         run_production_transition_eligibility_compile_tests
+        PROPERTIES
+            WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+    )
+
+    add_executable(
+        production_transition_evaluator_tests
+        tests/production_transition_evaluator_tests.cpp
+    )
+    target_link_libraries(
+        production_transition_evaluator_tests
+        PRIVATE adaptive_mesh
+    )
+    target_include_directories(
+        production_transition_evaluator_tests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    add_test(
+        NAME run_production_transition_evaluator_tests
+        COMMAND production_transition_evaluator_tests
+    )
+    set_tests_properties(
+        run_production_transition_evaluator_tests
+        PROPERTIES
+            WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+    )
+
+    add_executable(
+        production_transition_evaluator_compile_tests
+        tests/production_transition_evaluator_compile_tests.cpp
+    )
+    target_link_libraries(
+        production_transition_evaluator_compile_tests
+        PRIVATE adaptive_mesh
+    )
+    add_test(
+        NAME run_production_transition_evaluator_compile_tests
+        COMMAND production_transition_evaluator_compile_tests
+    )
+    set_tests_properties(
+        run_production_transition_evaluator_compile_tests
+        PROPERTIES
+            WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+    )
+
+    add_executable(
+        production_transition_evaluator_concurrency_tests
+        tests/production_transition_evaluator_concurrency_tests.cpp
+    )
+    target_link_libraries(
+        production_transition_evaluator_concurrency_tests
+        PRIVATE adaptive_mesh Threads::Threads
+    )
+    target_include_directories(
+        production_transition_evaluator_concurrency_tests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    add_test(
+        NAME run_production_transition_evaluator_concurrency_tests
+        COMMAND production_transition_evaluator_concurrency_tests
+    )
+    set_tests_properties(
+        run_production_transition_evaluator_concurrency_tests
         PROPERTIES
             WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
     )

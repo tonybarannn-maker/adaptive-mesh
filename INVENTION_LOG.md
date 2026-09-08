@@ -223,3 +223,77 @@ In particular, K11 ends at:
 Any future eligibility-to-authority, credential, capability, execution, or
 mutation mechanism requires a new architecture/IP/FTO gate before
 implementation.
+
+### K12 Production Prerequisite Producer / Evaluation Boundary
+
+- Documentation date: 2026-09-08
+- Canonical implementation baseline:
+  `1c3b81821deae0cdb5114bce9db89777909a477d`
+- Design lineage: K12-D1, K12-D1.1/F1-F3, K12-D1.2/F4-F5, K12-D2,
+  K12-D2.1, and K12-CA1.
+- Public subject model: descriptive directed endpoint locator only.
+- Public result model: `no_request`, `not_eligible`,
+  `eligible_for_authority_consideration`.
+- State/version rule: snapshot ownership exclusively originates production
+  context/version; prerequisite producers consume the exact captured version.
+- Lifecycle rule: relationship generation identifies one continuous directed
+  relationship incarnation; same endpoint values do not revive an old
+  generation.
+- Anti-resurrection rule: an authority-relevant state change advances lineage
+  even when externally visible values later return to an earlier value.
+- Construction topology: one complete library-owned
+  `detail::ProductionTransitionConstructionAccess` materializes K11
+  restricted-origin values from matching typed validation results.
+- Construction/validation separation: construction privilege does not grant
+  validation authority; there is no generic `kind + bool` evidence minting API.
+- Revalidation rule: stale context destroys the logical attempt; old evidence
+  is not combined with a new revalidation result.
+- K12-I1 integration status: header-only production-evaluation semantics with
+  synthetic test-owned state backend; no live `SpatialAdaptiveMesh`
+  production-state attachment.
+- Authority semantics: none. Positive K12 output is the existing K11
+  eligibility classification followed by STOP.
+- Mutation semantics: none. K12-I1 creates no topology, bridge, node-state, or
+  execution path.
+- KIKO/K9/K10 authority promotion: none.
+- First implementation commit: `9e4bb77bd46ebbf16f98965e68805833940ca242`.
+- First pull request: TBD.
+- Originality/prior-art review: required as a separate K12 gate.
+- Preliminary FTO/design-around review: required as a separate K12 gate.
+- Patentability/non-infringement/FTO claim: none.
+
+### K12 — Preliminary IP gate status
+
+- K12-IP1 = CLOSED — PRELIMINARY
+- K12-IP2 = PRELIMINARY PASS WITH MANDATORY DESIGN-AROUND CONSTRAINTS
+- novelty = NOT ESTABLISHED
+- patentability = NO CONCLUSION
+- professional FTO = NOT PERFORMED
+- non-infringement conclusion = NONE
+- claimed invention date = TBD
+
+These statuses record preliminary engineering/IP review gates only. They do not
+establish novelty, non-obviousness, patentability, validity,
+freedom-to-operate, non-infringement, or commercialization clearance.
+
+The K12 authority firewall remains mandatory:
+
+validator result != authorization decision
+
+construction privilege != validation authority
+
+evidence != token/capability/credential
+
+final revalidation != authorization grant
+
+K11/K12 positive result != BridgeTransitionIntent
+
+eligibility -> STOP
+
+K12 must not introduce or imply cryptographic signing, quorum endorsement,
+threshold authorization, distributed authority issuance, distributed
+token/credential issuance, or aggregate authority generation.
+
+Any future eligibility-to-authority, credential, capability, execution, or
+mutation mechanism requires a new architecture/originality/FTO gate before
+implementation.
