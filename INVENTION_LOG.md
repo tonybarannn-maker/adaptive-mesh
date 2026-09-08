@@ -261,3 +261,39 @@ implementation.
 - Originality/prior-art review: required as a separate K12 gate.
 - Preliminary FTO/design-around review: required as a separate K12 gate.
 - Patentability/non-infringement/FTO claim: none.
+
+### K12 — Preliminary IP gate status
+
+- K12-IP1 = CLOSED — PRELIMINARY
+- K12-IP2 = PRELIMINARY PASS WITH MANDATORY DESIGN-AROUND CONSTRAINTS
+- novelty = NOT ESTABLISHED
+- patentability = NO CONCLUSION
+- professional FTO = NOT PERFORMED
+- non-infringement conclusion = NONE
+- claimed invention date = TBD
+
+These statuses record preliminary engineering/IP review gates only. They do not
+establish novelty, non-obviousness, patentability, validity,
+freedom-to-operate, non-infringement, or commercialization clearance.
+
+The K12 authority firewall remains mandatory:
+
+validator result != authorization decision
+
+construction privilege != validation authority
+
+evidence != token/capability/credential
+
+final revalidation != authorization grant
+
+K11/K12 positive result != BridgeTransitionIntent
+
+eligibility -> STOP
+
+K12 must not introduce or imply cryptographic signing, quorum endorsement,
+threshold authorization, distributed authority issuance, distributed
+token/credential issuance, or aggregate authority generation.
+
+Any future eligibility-to-authority, credential, capability, execution, or
+mutation mechanism requires a new architecture/originality/FTO gate before
+implementation.

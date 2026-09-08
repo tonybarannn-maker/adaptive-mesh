@@ -74,3 +74,68 @@ Any future eligibility-to-authority or mutation mechanism requires a new archite
 ## IP qualification
 
 This document records engineering architecture and provenance boundaries. It does not establish novelty, patentability, freedom-to-operate, non-infringement, validity, or commercialization clearance.
+
+
+## K12 preliminary IP gate status
+
+The current preliminary gate status is:
+
+```text
+K12-IP1          = CLOSED — PRELIMINARY
+K12-IP2          = PRELIMINARY PASS WITH MANDATORY DESIGN-AROUND CONSTRAINTS
+novelty          = NOT ESTABLISHED
+patentability    = NO CONCLUSION
+professional FTO = NOT PERFORMED
+non-infringement = NONE
+```
+
+These are preliminary review classifications only. They do not establish
+novelty, non-obviousness, patentability, validity, freedom-to-operate,
+non-infringement, or commercialization clearance.
+
+### Mandatory authority design-around constraints
+
+The production-evaluation boundary must preserve all of the following
+separations:
+
+```text
+validator result             != authorization decision
+construction privilege       != validation authority
+evidence                     != token/capability/credential
+final revalidation           != authorization grant
+K11/K12 positive result      != BridgeTransitionIntent
+eligibility                  -> STOP
+```
+
+Construction access may mechanically materialize a restricted K11 value only
+from the matching typed, lineage-bound internal result. It must not determine
+that a prerequisite is satisfied and must not create a generic evidence or
+authority-minting path.
+
+Final revalidation establishes only that the captured attempt remains coherent
+with its production state/version domain. It does not authorize a transition,
+grant permission, create a capability, or extend the lifetime of an eligibility
+result.
+
+A positive K11/K12 result remains an eligibility classification only. It is not
+`BridgeTransitionIntent`, an execution command, a permission, an authority
+object, or a mutation request.
+
+### Distributed-authority exclusion
+
+K12-I1 explicitly excludes:
+
+- cryptographic signing;
+- quorum endorsement;
+- threshold authorization;
+- distributed authority issuance;
+- distributed token or credential issuance;
+- aggregate authority generation.
+
+These mechanisms must not be inferred from prerequisite validation,
+construction privilege, revalidation, evidence aggregation, or a positive
+eligibility result.
+
+Any future mechanism crossing `eligibility -> STOP` requires a separate
+architecture, originality/prior-art, and preliminary FTO/design-around gate
+before implementation.
