@@ -183,7 +183,7 @@ Unknown data must remain `TBD` or `not yet verified` until evidence is available
   mutation, KIKO-to-SOAM-Core coupling, K9 input, or K10 shadow promotion.
 - Evidence status: correctness, compile-separation, isolation, and regression
   evidence must be captured before commit authorization.
-- First implementation commit: TBD
+- First implementation commit: `040e3cf4da1a090523d86920798c70c49166cad4`
 - First pull request: TBD
 - Originality/prior-art review: separate gate; no conclusion recorded here.
 - Preliminary FTO/design-around review: separate gate; no conclusion recorded
