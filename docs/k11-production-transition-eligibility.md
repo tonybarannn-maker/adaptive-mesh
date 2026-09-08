@@ -147,3 +147,107 @@ transmit-power, dynamic-spectrum, or other PHY/MAC control behavior.
 
 Passing K11 tests does not establish patentability, freedom-to-operate,
 non-infringement, system-wide security, or safe production actuation.
+
+## K11 preliminary IP review status and mandatory design-around constraints
+
+The K11 originality/prior-art review and preliminary FTO/design-around review
+are separate from the technical correctness gate.
+
+Current review status:
+
+- K11-IP1 = preliminary originality/prior-art review complete
+- K11-IP2 = preliminary pass with mandatory design-around constraints
+
+The following constraints are mandatory for the current K11 design and for
+later work relying on this boundary.
+
+### DA-1 — Eligibility remains eligibility only
+
+`eligible_for_authority_consideration` remains an eligibility classification
+only. It does not grant, represent, transfer, or imply transition authority.
+
+Eligibility is not permission, authority, execution, or mutation.
+
+### DA-2 — No token, credential, capability, or permission
+
+K11 must not create or return an authorization token, credential, capability,
+permission object, access grant, or equivalent authority-bearing artifact.
+
+### DA-3 — No portable execution-authority bundle
+
+The K11 result and prerequisite evidence must not form a portable,
+transferable, replayable, or independently exercisable execution-authority
+bundle.
+
+### DA-4 — No access grant or operation authorization
+
+A positive K11 result must not be interpreted as an access grant, operation
+authorization, command authorization, or permission to perform a transition.
+
+### DA-5 — No execution
+
+K11 terminates after eligibility classification:
+
+`eligibility -> STOP`
+
+K11 contains no transition executor and performs no production actuation.
+
+### DA-6 — No bridge, state, or topology mutation
+
+K11 must not mutate a bridge, node state, topology, production relationship,
+or other production control state.
+
+### DA-7 — Freshness is not token TTL
+
+K11 freshness expresses coherence with the relevant production state and
+request context. Freshness must not be reinterpreted as token TTL, credential
+expiration, lease duration, authorization lifetime, or bearer-token freshness.
+
+### DA-8 — StateVersion is not historical access-control audit
+
+`ProductionStateVersion` is an opaque equality-bound version for
+authority-relevant production-state coherence. It must not become a historical
+access-control audit sequence, authorization ledger, permission epoch, or
+credential-revocation history.
+
+### DA-9 — Evidence is not reusable authorization claims
+
+K11 prerequisite evidence is context-bound prerequisite evidence only. It must
+not become reusable authorization claims, bearer assertions, portable proofs
+of authority, or independently exercisable credentials.
+
+### DA-10 — No distributed token, signature, or consensus issuance
+
+K11 must not expand into distributed issuance, signing, endorsement,
+replication, quorum, consensus, or validation of authority-bearing tokens or
+credentials without a separate architecture and IP review.
+
+### DA-11 — KIKO or shadow evidence is not a production credential
+
+KIKO, K9 interchange observations, K10 shadow decisions, shadow metrics,
+correlation identifiers, and other experimental artifacts must not be promoted
+into production credentials or evidence that independently grants production
+authority.
+
+Experimental information may inform separately validated production-boundary
+inputs, but it does not cross the boundary as authority.
+
+### DA-12 — Eligibility-to-authority expansion requires a new IP gate
+
+Any future mechanism that converts K11 eligibility into transition authority,
+permission, capability, credential, execution right, or mutation path requires
+a new architecture/originality/FTO gate before implementation.
+
+K11 itself ends before that boundary.
+
+## Preliminary-review qualification
+
+Preliminary review found no complete literal mapping in the reviewed active US
+independent claims.
+
+This does not establish FTO, non-infringement, patentability, validity, or
+commercialization clearance.
+
+Individual K11 primitives are in crowded or prior-art-adjacent areas. The full
+K11 composition was not found in this preliminary pass. Novelty is not
+established. A professional claim-level FTO review has not been performed.
