@@ -158,3 +158,34 @@ Unknown data must remain `TBD` or `not yet verified` until evidence is available
 - Known first implementation commit: `6aceed3c2d996bb9436c83e9f41b6732e8c03f24`
 - First pull request: `#30`
 - Claimed invention date: TBD
+
+### K11 Production Transition Eligibility boundary
+
+- Documentation date: 2026-09-08
+- Canonical implementation baseline:
+  `0083c69647129876f467fca52e8652f01f3670bd`
+- Design lineage: K11-D1 repository/API audit; K11-D2 authority-boundary
+  threat model; K11-D3 eligibility API proposal; K11-D3.1 binding/evidence
+  producer contract; K11-D3.2 ownership/versioning review; K11-D4 API freeze.
+- Role: eligibility-only boundary between validated production prerequisite
+  evidence and any future transition-authority consideration.
+- Central separation:
+  recommendation != permission != prerequisite evidence != eligibility !=
+  authority != mutation.
+- Restricted-origin design: public K11 types expose inspection/evaluation
+  semantics without a supported public evidence/request minting API.
+- Test construction: synthetic privileged fixture access is confined to
+  `tests/internal/production_transition_eligibility_test_access.hpp`; it is not
+  a production evidence producer.
+- Diagnostic semantics: deterministic fail-closed precedence with all
+  context-component mismatches represented publicly as `binding_mismatch`.
+- Integration semantics: no authority object, executor, topology/state
+  mutation, KIKO-to-SOAM-Core coupling, K9 input, or K10 shadow promotion.
+- Evidence status: correctness, compile-separation, isolation, and regression
+  evidence must be captured before commit authorization.
+- First implementation commit: TBD
+- First pull request: TBD
+- Originality/prior-art review: separate gate; no conclusion recorded here.
+- Preliminary FTO/design-around review: separate gate; no conclusion recorded
+  here.
+- Patentability/non-infringement claim: none.
