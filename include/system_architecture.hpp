@@ -10,6 +10,8 @@
 #ifndef SYSTEM_ARCHITECTURE_HPP
 #define SYSTEM_ARCHITECTURE_HPP
 
+#include "production_transition_evaluator.hpp"
+
 #include <iostream>
 #include <vector>
 #include <cmath>
@@ -221,6 +223,8 @@ namespace AdaptiveMesh {
 
     class SpatialAdaptiveMesh {
     private:
+        friend class detail::ProductionTransitionEvaluatorLiveTestAccess;
+
         using EdgeKey = std::pair<size_t, size_t>;
 
         struct EdgeKeyHash {
@@ -236,7 +240,134 @@ namespace AdaptiveMesh {
             BridgeStatus status;
         };
 
+        struct ProductionRelationshipLifecycle final {
+            std::uint64_t sourceNodeIncarnation;
+            std::uint64_t targetNodeIncarnation;
+            std::uint64_t relationshipGeneration;
+            std::uint64_t authorityRelevantContextLineage;
+            detail::ProductionPersistenceRecord persistence;
+        };
+
+        class LiveProductionTransitionEvaluationBackend final
+            : public detail::ProductionTransitionEvaluationBackend {
+        public:
+            explicit LiveProductionTransitionEvaluationBackend(
+                SpatialAdaptiveMesh& owner) noexcept
+                : owner_(owner)
+            {
+            }
+
+            [[nodiscard]] detail::RelationshipResolution
+            resolveCurrentRelationship(
+                const ProductionTransitionEvaluationLocator& locator)
+                override {
+                std::shared_lock lock(owner_.topologyMutex);
+                const auto found = owner_.productionRelationships_.find(
+                    EdgeKey{locator.sourceNodeId, locator.targetNodeId});
+                if (found == owner_.productionRelationships_.end()) {
+                    return relationshipAbsent();
+                }
+                const auto& current = found->second;
+                return resolvedRelationship(
+                    locator.sourceNodeId,
+                    locator.targetNodeId,
+                    current.relationshipGeneration,
+                    current.sourceNodeIncarnation,
+                    current.targetNodeIncarnation);
+            }
+
+            [[nodiscard]] detail::SnapshotCaptureResult captureSnapshot(
+                const detail::CapturedRelationshipIdentity& relationship)
+                override {
+                std::shared_lock lock(owner_.topologyMutex);
+                const auto* current = owner_.findLifecycleUnlocked(relationship);
+                if (current == nullptr) return snapshotCaptureFailed();
+                return completeSnapshot(
+                    relationship,
+                    current->authorityRelevantContextLineage,
+                    transitionContractIdentity_,
+                    current->authorityRelevantContextLineage,
+                    detail::ProductionPersistenceAccess::state(
+                        current->persistence),
+                    detail::ProductionPersistenceAccess::lineage(
+                        current->persistence));
+            }
+
+            [[nodiscard]] detail::RequestDerivationResult deriveDirection(
+                const detail::CoherentProductionTransitionSnapshot& snapshot)
+                override {
+                std::shared_lock lock(owner_.topologyMutex);
+                const auto* current =
+                    owner_.findLifecycleUnlocked(snapshot.relationship());
+                if (current == nullptr ||
+                    current->authorityRelevantContextLineage !=
+                        snapshot.lineage()) {
+                    return requestDerivationFailed();
+                }
+                // D7 production observation/confidence provenance is not
+                // available in this authorized slice, so no production-native
+                // request direction may be derived yet.
+                return requestDerivationFailed();
+            }
+
+            [[nodiscard]] detail::DomainValidationOutcome validatePermission(
+                const detail::CoherentProductionTransitionSnapshot&,
+                const detail::ProductionDerivedDirection&) override {
+                return detail::DomainValidationOutcome::unavailable_or_failed;
+            }
+
+            [[nodiscard]] detail::DomainValidationOutcome validateInvariant(
+                const detail::CoherentProductionTransitionSnapshot&,
+                const detail::ProductionDerivedDirection&) override {
+                return detail::DomainValidationOutcome::unavailable_or_failed;
+            }
+
+            [[nodiscard]] detail::DomainValidationOutcome validateResilience(
+                const detail::CoherentProductionTransitionSnapshot&,
+                const detail::ProductionDerivedDirection&) override {
+                return detail::DomainValidationOutcome::unavailable_or_failed;
+            }
+
+            [[nodiscard]] detail::DomainValidationOutcome validateFreshness(
+                const detail::CoherentProductionTransitionSnapshot&,
+                const detail::ProductionDerivedDirection&) override {
+                return detail::DomainValidationOutcome::unavailable_or_failed;
+            }
+
+            [[nodiscard]] detail::FinalRevalidationOutcome revalidate(
+                const detail::CoherentProductionTransitionSnapshot& snapshot,
+                const detail::ProductionDerivedDirection&) override {
+                std::shared_lock lock(owner_.topologyMutex);
+                const auto* current =
+                    owner_.findLifecycleUnlocked(snapshot.relationship());
+                if (current == nullptr ||
+                    current->authorityRelevantContextLineage !=
+                        snapshot.lineage() ||
+                    detail::ProductionPersistenceAccess::state(
+                        current->persistence) !=
+                        snapshot.persistenceState() ||
+                    detail::ProductionPersistenceAccess::lineage(
+                        current->persistence) !=
+                        snapshot.persistenceLineage()) {
+                    return detail::FinalRevalidationOutcome::stale;
+                }
+                return detail::FinalRevalidationOutcome::revalidated;
+            }
+
+        private:
+            static constexpr std::uint64_t transitionContractIdentity_ = 1;
+            SpatialAdaptiveMesh& owner_;
+        };
+
         std::vector<AutopoieticNode> nodes;
+        std::vector<std::uint64_t> nodeIncarnations_;
+        std::unordered_map<
+            EdgeKey,
+            ProductionRelationshipLifecycle,
+            EdgeKeyHash> productionRelationships_;
+        std::uint64_t nextNodeIncarnation_ = 1;
+        std::uint64_t nextRelationshipGeneration_ = 1;
+        std::uint64_t nextAuthorityRelevantContextLineage_ = 1;
         double alpha = 0.15;
         mutable std::shared_mutex topologyMutex;
         const size_t workerLimit;
@@ -262,6 +393,8 @@ namespace AdaptiveMesh {
         std::exception_ptr workerException;
         bool simulationBufferShapeDirty = true;
         bool topologyValidationRequired = true;
+        std::unique_ptr<detail::ProductionTransitionEvaluationBinding>
+            productionTransitionEvaluationBinding_;
 #ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
         SimulationPhaseProfile lastSimulationPhaseProfile{};
 #endif
@@ -293,9 +426,66 @@ namespace AdaptiveMesh {
             nodes[nodeB].bridges.reserve(nodes[nodeB].bridges.size() + 1);
             nodes[nodeA].bridges.push_back({nodeB, dist, orientA, 1.0, BridgeStatus::NORMAL});
             nodes[nodeB].bridges.push_back({nodeA, dist, orientB, 1.0, BridgeStatus::NORMAL});
+            establishProductionRelationshipUnlocked(
+                static_cast<std::size_t>(nodeA),
+                static_cast<std::size_t>(nodeB));
+            establishProductionRelationshipUnlocked(
+                static_cast<std::size_t>(nodeB),
+                static_cast<std::size_t>(nodeA));
             if (enforceStability) {
                 enforceStabilityConditionUnlocked();
             }
+        }
+
+        void establishProductionRelationshipUnlocked(
+            std::size_t sourceNodeId,
+            std::size_t targetNodeId) {
+            productionRelationships_.try_emplace(
+                EdgeKey{sourceNodeId, targetNodeId},
+                ProductionRelationshipLifecycle{
+                    nodeIncarnations_.at(sourceNodeId),
+                    nodeIncarnations_.at(targetNodeId),
+                    nextRelationshipGeneration_++,
+                    nextAuthorityRelevantContextLineage_++,
+                    detail::ProductionPersistenceRecord{}
+                });
+        }
+
+        [[nodiscard]] const ProductionRelationshipLifecycle*
+        findLifecycleUnlocked(
+            const detail::CapturedRelationshipIdentity& relationship) const {
+            const auto found = productionRelationships_.find(
+                EdgeKey{
+                    relationship.sourceNodeId(),
+                    relationship.targetNodeId()});
+            if (found == productionRelationships_.end()) return nullptr;
+            const auto& current = found->second;
+            if (current.relationshipGeneration != relationship.generation() ||
+                current.sourceNodeIncarnation !=
+                    relationship.sourceNodeIncarnation() ||
+                current.targetNodeIncarnation !=
+                    relationship.targetNodeIncarnation()) {
+                return nullptr;
+            }
+            return &current;
+        }
+
+        void discardAbsentProductionRelationshipsUnlocked() {
+            std::erase_if(
+                productionRelationships_,
+                [this](const auto& item) {
+                    const auto sourceNodeId = item.first.first;
+                    const auto targetNodeId = item.first.second;
+                    if (sourceNodeId >= nodes.size()) return true;
+                    const auto& bridges = nodes[sourceNodeId].bridges;
+                    return std::none_of(
+                        bridges.begin(),
+                        bridges.end(),
+                        [targetNodeId](const SpatialBridge& bridge) {
+                            return bridge.targetNodeId ==
+                                static_cast<int>(targetNodeId);
+                        });
+                });
         }
 
         [[nodiscard]] size_t resolveWorkerCountUnlocked() const noexcept {
@@ -527,9 +717,20 @@ namespace AdaptiveMesh {
 
     public:
         explicit SpatialAdaptiveMesh(size_t maxWorkers = 0)
-            : workerLimit(maxWorkers) {}
+            : workerLimit(maxWorkers),
+              productionTransitionEvaluationBinding_(
+                  detail::ProductionTransitionEvaluatorBindingAccess::
+                      bindingForOwner(
+                          std::make_shared<
+                              LiveProductionTransitionEvaluationBackend>(
+                                  *this)))
+        {
+        }
 
-        ~SpatialAdaptiveMesh() { stopWorkerPool(); }
+        ~SpatialAdaptiveMesh() {
+            productionTransitionEvaluationBinding_->invalidateAndDrain();
+            stopWorkerPool();
+        }
 
         SpatialAdaptiveMesh(const SpatialAdaptiveMesh&) = delete;
         SpatialAdaptiveMesh& operator=(const SpatialAdaptiveMesh&) = delete;
@@ -544,6 +745,7 @@ namespace AdaptiveMesh {
                 throw std::invalid_argument("node ID must match insertion index");
             }
             nodes.emplace_back(id, pos, baseline);
+            nodeIncarnations_.push_back(nextNodeIncarnation_++);
             simulationBufferShapeDirty = true;
             topologyValidationRequired = true;
         }
@@ -683,6 +885,7 @@ namespace AdaptiveMesh {
             }
             enforceStabilityConditionUnlocked();
             if (topologyShapeChanged) {
+                discardAbsentProductionRelationshipsUnlocked();
                 simulationBufferShapeDirty = true;
             }
             topologyValidationRequired = true;
@@ -859,6 +1062,12 @@ namespace AdaptiveMesh {
 #endif
 
         void simulationStepAsync() { simulationStep(); }
+
+        [[nodiscard]] ProductionTransitionEvaluator
+        productionTransitionEvaluator() const noexcept {
+            return detail::ProductionTransitionEvaluatorBindingAccess::
+                evaluator(*productionTransitionEvaluationBinding_);
+        }
 
         [[nodiscard]] double getNodeState(size_t id) const {
             std::shared_lock lock(topologyMutex);

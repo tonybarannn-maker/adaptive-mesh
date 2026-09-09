@@ -8,6 +8,10 @@
 
 namespace AdaptiveMesh {
 
+namespace detail {
+class ProductionPersistenceAccess;
+}
+
 enum class PersistentBridgeRecommendation {
     PRESERVE,
     CONSTRAIN,
@@ -95,6 +99,31 @@ private:
         PRESERVE
     };
 
+    struct CompleteState final {
+        double activationThreshold;
+        double releaseThreshold;
+        std::size_t activationSamples;
+        std::size_t releaseSamples;
+        std::size_t consecutiveSamples;
+        PersistentBridgeRecommendation recommendation;
+        PendingDirection pendingDirection;
+
+        friend bool operator==(const CompleteState&, const CompleteState&)
+            noexcept = default;
+    };
+
+    [[nodiscard]] CompleteState completeState() const noexcept {
+        return {
+            activationThreshold_,
+            releaseThreshold_,
+            activationSamples_,
+            releaseSamples_,
+            consecutiveSamples_,
+            recommendation_,
+            pendingDirection_
+        };
+    }
+
     void clearPending() noexcept
     {
         pendingDirection_ = PendingDirection::NONE;
@@ -121,6 +150,8 @@ private:
     PersistentBridgeRecommendation recommendation_ =
         PersistentBridgeRecommendation::PRESERVE;
     PendingDirection pendingDirection_ = PendingDirection::NONE;
+
+    friend class detail::ProductionPersistenceAccess;
 };
 
 } // namespace AdaptiveMesh

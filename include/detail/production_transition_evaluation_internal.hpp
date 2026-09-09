@@ -1,13 +1,59 @@
 #pragma once
 
+#include "bridge_persistence.hpp"
 #include "production_transition_eligibility.hpp"
 #include "production_transition_evaluator.hpp"
 
 #include <cstddef>
+#include <condition_variable>
 #include <cstdint>
+#include <memory>
+#include <mutex>
 #include <optional>
 
 namespace AdaptiveMesh::detail {
+
+class ProductionPersistenceAccess;
+class ProductionPersistenceRecord;
+class ProductionTransitionEvaluatorLiveTestAccess;
+
+struct ProductionPersistenceState final {
+    double activationThreshold;
+    double releaseThreshold;
+    std::size_t activationSamples;
+    std::size_t releaseSamples;
+    std::size_t consecutiveSamples;
+    std::uint8_t recommendation;
+    std::uint8_t pendingDirection;
+
+    friend bool operator==(
+        const ProductionPersistenceState&,
+        const ProductionPersistenceState&) noexcept = default;
+};
+
+class ProductionPersistenceLineage final {
+public:
+    friend bool operator==(
+        const ProductionPersistenceLineage&,
+        const ProductionPersistenceLineage&) noexcept = default;
+
+private:
+    struct Identity final {};
+
+    ProductionPersistenceLineage()
+        : identity_(std::make_shared<const Identity>())
+    {
+    }
+
+    void advance() { identity_ = std::make_shared<const Identity>(); }
+
+    std::shared_ptr<const Identity> identity_;
+
+    friend class ProductionPersistenceAccess;
+    friend class ProductionPersistenceRecord;
+    friend class ProductionTransitionEvaluationBackend;
+    friend class ProductionTransitionEvaluatorLiveTestAccess;
+};
 
 class CapturedRelationshipIdentity final {
 public:
@@ -23,20 +69,34 @@ public:
         return generation_;
     }
 
+    [[nodiscard]] std::uint64_t sourceNodeIncarnation() const noexcept {
+        return sourceNodeIncarnation_;
+    }
+
+    [[nodiscard]] std::uint64_t targetNodeIncarnation() const noexcept {
+        return targetNodeIncarnation_;
+    }
+
 private:
     constexpr CapturedRelationshipIdentity(
         std::size_t sourceNodeId,
         std::size_t targetNodeId,
-        std::uint64_t generation) noexcept
+        std::uint64_t generation,
+        std::uint64_t sourceNodeIncarnation,
+        std::uint64_t targetNodeIncarnation) noexcept
         : sourceNodeId_(sourceNodeId),
           targetNodeId_(targetNodeId),
-          generation_(generation)
+          generation_(generation),
+          sourceNodeIncarnation_(sourceNodeIncarnation),
+          targetNodeIncarnation_(targetNodeIncarnation)
     {
     }
 
     std::size_t sourceNodeId_;
     std::size_t targetNodeId_;
     std::uint64_t generation_;
+    std::uint64_t sourceNodeIncarnation_;
+    std::uint64_t targetNodeIncarnation_;
 
     friend class ProductionTransitionEvaluationBackend;
 };
@@ -102,16 +162,30 @@ public:
         return lineage_;
     }
 
+    [[nodiscard]] const ProductionPersistenceState& persistenceState()
+        const noexcept {
+        return persistenceState_;
+    }
+
+    [[nodiscard]] const ProductionPersistenceLineage& persistenceLineage()
+        const noexcept {
+        return persistenceLineage_;
+    }
+
 private:
-    constexpr CoherentProductionTransitionSnapshot(
+    CoherentProductionTransitionSnapshot(
         CapturedRelationshipIdentity relationship,
         CapturedProductionStateVersion stateVersion,
         ResolvedTransitionClass transitionClass,
-        std::uint64_t lineage) noexcept
+        std::uint64_t lineage,
+        ProductionPersistenceState persistenceState,
+        ProductionPersistenceLineage persistenceLineage) noexcept
         : relationship_(relationship),
           stateVersion_(stateVersion),
           transitionClass_(transitionClass),
-          lineage_(lineage)
+          lineage_(lineage),
+          persistenceState_(persistenceState),
+          persistenceLineage_(std::move(persistenceLineage))
     {
     }
 
@@ -119,6 +193,8 @@ private:
     CapturedProductionStateVersion stateVersion_;
     ResolvedTransitionClass transitionClass_;
     std::uint64_t lineage_;
+    ProductionPersistenceState persistenceState_;
+    ProductionPersistenceLineage persistenceLineage_;
 
     friend class ProductionTransitionEvaluationBackend;
 };
@@ -211,6 +287,7 @@ private:
     std::uint64_t lineage_;
 
     friend class ProductionTransitionEvaluationBackend;
+    friend class ProductionTransitionEvaluatorLiveTestAccess;
 };
 
 enum class RequestDerivationStatus {
@@ -304,13 +381,17 @@ protected:
     static constexpr RelationshipResolution resolvedRelationship(
         std::size_t sourceNodeId,
         std::size_t targetNodeId,
-        std::uint64_t generation) noexcept {
+        std::uint64_t generation,
+        std::uint64_t sourceNodeIncarnation = 0,
+        std::uint64_t targetNodeIncarnation = 0) noexcept {
         return {
             RelationshipResolutionStatus::resolved,
             CapturedRelationshipIdentity{
                 sourceNodeId,
                 targetNodeId,
-                generation
+                generation,
+                sourceNodeIncarnation,
+                targetNodeIncarnation
             }
         };
     }
@@ -330,18 +411,22 @@ protected:
     }
 
     [[nodiscard]]
-    static constexpr SnapshotCaptureResult completeSnapshot(
+    static SnapshotCaptureResult completeSnapshot(
         const CapturedRelationshipIdentity& relationship,
         std::uint64_t stateVersion,
         std::uint64_t transitionClass,
-        std::uint64_t lineage) noexcept {
+        std::uint64_t lineage,
+        ProductionPersistenceState persistenceState = {},
+        ProductionPersistenceLineage persistenceLineage = {}) noexcept {
         return {
             SnapshotCaptureStatus::complete,
             CoherentProductionTransitionSnapshot{
                 relationship,
                 CapturedProductionStateVersion{stateVersion},
                 ResolvedTransitionClass{transitionClass},
-                lineage
+                lineage,
+                persistenceState,
+                std::move(persistenceLineage)
             }
         };
     }
@@ -374,6 +459,273 @@ protected:
             std::nullopt
         };
     }
+};
+
+class BindingState final {
+public:
+    explicit BindingState(
+        std::shared_ptr<ProductionTransitionEvaluationBackend> backend) noexcept
+        : backend_(std::move(backend))
+    {
+    }
+
+private:
+    std::mutex mutex_;
+    std::condition_variable drained_;
+    std::shared_ptr<ProductionTransitionEvaluationBackend> backend_;
+    std::size_t activeLeases_ = 0;
+    bool acceptingLeases_ = true;
+
+    friend class EvaluationLease;
+    friend class ProductionTransitionEvaluationBindingHandle;
+    friend class ProductionTransitionEvaluationBinding;
+    friend class ProductionTransitionEvaluatorBindingAccess;
+};
+
+class EvaluationLease final {
+public:
+    EvaluationLease() noexcept = default;
+    EvaluationLease(const EvaluationLease&) = delete;
+    EvaluationLease& operator=(const EvaluationLease&) = delete;
+
+    EvaluationLease(EvaluationLease&& other) noexcept
+        : state_(std::move(other.state_)),
+          backend_(std::move(other.backend_))
+    {
+    }
+
+    EvaluationLease& operator=(EvaluationLease&& other) noexcept {
+        if (this != &other) {
+            release();
+            state_ = std::move(other.state_);
+            backend_ = std::move(other.backend_);
+        }
+        return *this;
+    }
+
+    ~EvaluationLease() { release(); }
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return backend_ != nullptr;
+    }
+
+    [[nodiscard]] ProductionTransitionEvaluationBackend& backend() const {
+        return *backend_;
+    }
+
+private:
+    EvaluationLease(
+        std::shared_ptr<BindingState> state,
+        std::shared_ptr<ProductionTransitionEvaluationBackend> backend) noexcept
+        : state_(std::move(state)), backend_(std::move(backend))
+    {
+    }
+
+    void release() noexcept {
+        if (!state_) return;
+        {
+            std::lock_guard lock(state_->mutex_);
+            if (state_->activeLeases_ > 0) {
+                --state_->activeLeases_;
+            }
+            if (!state_->acceptingLeases_ && state_->activeLeases_ == 0) {
+                state_->drained_.notify_all();
+            }
+        }
+        backend_.reset();
+        state_.reset();
+    }
+
+    std::shared_ptr<BindingState> state_;
+    std::shared_ptr<ProductionTransitionEvaluationBackend> backend_;
+
+    friend class ProductionTransitionEvaluationBindingHandle;
+};
+
+inline EvaluationLease
+ProductionTransitionEvaluationBindingHandle::acquireEvaluationLease()
+    const noexcept {
+    if (!state_) return {};
+    std::lock_guard lock(state_->mutex_);
+    if (!state_->acceptingLeases_ || !state_->backend_) return {};
+    ++state_->activeLeases_;
+    return EvaluationLease{state_, state_->backend_};
+}
+
+class ProductionTransitionEvaluationBinding final {
+private:
+    explicit ProductionTransitionEvaluationBinding(
+        std::shared_ptr<ProductionTransitionEvaluationBackend> backend)
+        : state_(std::make_shared<BindingState>(std::move(backend)))
+    {
+    }
+
+public:
+    ProductionTransitionEvaluationBinding(
+        const ProductionTransitionEvaluationBinding&) = delete;
+    ProductionTransitionEvaluationBinding& operator=(
+        const ProductionTransitionEvaluationBinding&) = delete;
+
+    ~ProductionTransitionEvaluationBinding() { invalidateAndDrain(); }
+
+    void invalidateAndDrain() noexcept {
+        if (!state_) return;
+        std::unique_lock lock(state_->mutex_);
+        state_->acceptingLeases_ = false;
+        state_->drained_.notify_all();
+        state_->drained_.wait(lock, [this] {
+            return state_->activeLeases_ == 0;
+        });
+        state_->backend_.reset();
+    }
+
+private:
+    [[nodiscard]] ProductionTransitionEvaluationBindingHandle handle()
+        const noexcept {
+        return ProductionTransitionEvaluationBindingHandle{state_};
+    }
+
+    std::shared_ptr<BindingState> state_;
+
+    friend class ProductionTransitionEvaluatorBindingAccess;
+};
+
+class ProductionTransitionEvaluatorBindingAccess final {
+public:
+    [[nodiscard]] static ProductionTransitionEvaluator evaluator(
+        const ProductionTransitionEvaluationBinding& binding) noexcept {
+        return ProductionTransitionEvaluator{binding.handle()};
+    }
+
+private:
+    [[nodiscard]] static std::unique_ptr<ProductionTransitionEvaluationBinding>
+    bindingForOwner(
+        std::shared_ptr<ProductionTransitionEvaluationBackend> backend) {
+        return std::unique_ptr<ProductionTransitionEvaluationBinding>(
+            new ProductionTransitionEvaluationBinding(std::move(backend)));
+    }
+
+    [[nodiscard]] static std::unique_ptr<ProductionTransitionEvaluationBinding>
+    bindingForTest(
+        std::shared_ptr<ProductionTransitionEvaluationBackend> backend) {
+        return std::unique_ptr<ProductionTransitionEvaluationBinding>(
+            new ProductionTransitionEvaluationBinding(std::move(backend)));
+    }
+
+    [[nodiscard]] static EvaluationLease acquireLeaseForTest(
+        const ProductionTransitionEvaluationBindingHandle& handle) noexcept {
+        return handle.acquireEvaluationLease();
+    }
+
+    [[nodiscard]] static ProductionTransitionEvaluationBindingHandle
+    handleForTest(
+        const ProductionTransitionEvaluationBinding& binding) noexcept {
+        return binding.handle();
+    }
+
+    static void waitUntilInvalidatedForTest(
+        const ProductionTransitionEvaluationBinding& binding) noexcept {
+        std::unique_lock lock(binding.state_->mutex_);
+        binding.state_->drained_.wait(lock, [&binding] {
+            return !binding.state_->acceptingLeases_;
+        });
+    }
+
+    friend class ProductionTransitionEvaluatorLiveTestAccess;
+    friend class ::AdaptiveMesh::SpatialAdaptiveMesh;
+};
+
+class ProductionPersistenceEvolutionResult final {
+public:
+    [[nodiscard]] PersistentBridgeRecommendation recommendation()
+        const noexcept {
+        return recommendation_;
+    }
+
+    [[nodiscard]] bool completeStateChanged() const noexcept {
+        return completeStateChanged_;
+    }
+
+private:
+    ProductionPersistenceEvolutionResult(
+        PersistentBridgeRecommendation recommendation,
+        bool completeStateChanged) noexcept
+        : recommendation_(recommendation),
+          completeStateChanged_(completeStateChanged)
+    {
+    }
+
+    PersistentBridgeRecommendation recommendation_;
+    bool completeStateChanged_;
+
+    friend class ProductionPersistenceAccess;
+};
+
+class ProductionPersistenceRecord final {
+private:
+    ProductionPersistenceRecord()
+        : persistence_(0.5, 0.25, 2, 2)
+    {
+    }
+
+    BridgePersistence persistence_;
+    ProductionPersistenceLineage lineage_;
+
+    friend class ProductionPersistenceAccess;
+    friend class ProductionTransitionEvaluatorLiveTestAccess;
+    friend class ::AdaptiveMesh::SpatialAdaptiveMesh;
+};
+
+class ProductionPersistenceAccess final {
+public:
+    [[nodiscard]] static ProductionPersistenceState state(
+        const BridgePersistence& persistence) noexcept {
+        const auto complete = persistence.completeState();
+        return {
+            complete.activationThreshold,
+            complete.releaseThreshold,
+            complete.activationSamples,
+            complete.releaseSamples,
+            complete.consecutiveSamples,
+            static_cast<std::uint8_t>(complete.recommendation),
+            static_cast<std::uint8_t>(complete.pendingDirection)
+        };
+    }
+
+    [[nodiscard]] static ProductionPersistenceEvolutionResult evolve(
+        BridgePersistence& persistence,
+        const BridgePolicyEvidence& evidence) noexcept {
+        const auto before = persistence.completeState();
+        const auto recommendation = persistence.observe(evidence);
+        return {recommendation, persistence.completeState() != before};
+    }
+
+    [[nodiscard]] static bool reset(BridgePersistence& persistence) noexcept {
+        const auto before = persistence.completeState();
+        persistence.reset();
+        return persistence.completeState() != before;
+    }
+
+    [[nodiscard]] static ProductionPersistenceEvolutionResult evolve(
+        ProductionPersistenceRecord& record,
+        const BridgePolicyEvidence& evidence) {
+        const auto result = evolve(record.persistence_, evidence);
+        if (result.completeStateChanged()) record.lineage_.advance();
+        return result;
+    }
+
+    [[nodiscard]] static ProductionPersistenceLineage lineage(
+        const ProductionPersistenceRecord& record) noexcept {
+        return record.lineage_;
+    }
+
+    [[nodiscard]] static ProductionPersistenceState state(
+        const ProductionPersistenceRecord& record) noexcept {
+        return state(record.persistence_);
+    }
+
+    friend class ProductionTransitionEvaluatorLiveTestAccess;
+    friend class ::AdaptiveMesh::SpatialAdaptiveMesh;
 };
 
 class PermissionValidationResult final {
@@ -811,11 +1163,21 @@ namespace AdaptiveMesh {
 
 inline ProductionTransitionEvaluation ProductionTransitionEvaluator::evaluate(
     const ProductionTransitionEvaluationLocator& locator) {
-    if (backend_ == nullptr) {
+    auto lease = binding_.acquireEvaluationLease();
+    if (!lease) {
         return ProductionTransitionEvaluation::not_eligible;
     }
     return detail::ProductionTransitionEvaluationOrchestrator::evaluate(
-        *backend_, locator);
+        lease.backend(), locator);
+}
+
+inline ProductionTransitionEvaluator::ProductionTransitionEvaluator(
+    detail::ProductionTransitionEvaluationBackend& backend)
+    : binding_(std::make_shared<detail::BindingState>(
+          std::shared_ptr<detail::ProductionTransitionEvaluationBackend>(
+              &backend,
+              [](detail::ProductionTransitionEvaluationBackend*) noexcept {})))
+{
 }
 
 } // namespace AdaptiveMesh

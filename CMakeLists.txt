@@ -164,6 +164,53 @@ if(BUILD_TESTS)
         PROPERTIES
             WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
     )
+
+    add_executable(
+        production_transition_evaluator_live_binding_tests
+        tests/production_transition_evaluator_live_binding_tests.cpp
+    )
+    target_link_libraries(
+        production_transition_evaluator_live_binding_tests
+        PRIVATE adaptive_mesh Threads::Threads
+    )
+    target_include_directories(
+        production_transition_evaluator_live_binding_tests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    add_test(
+        NAME run_production_transition_evaluator_live_binding_tests
+        COMMAND production_transition_evaluator_live_binding_tests
+    )
+
+    add_executable(
+        production_transition_evaluator_live_concurrency_tests
+        tests/production_transition_evaluator_live_concurrency_tests.cpp
+    )
+    target_link_libraries(
+        production_transition_evaluator_live_concurrency_tests
+        PRIVATE adaptive_mesh Threads::Threads
+    )
+    target_include_directories(
+        production_transition_evaluator_live_concurrency_tests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+    add_test(
+        NAME run_production_transition_evaluator_live_concurrency_tests
+        COMMAND production_transition_evaluator_live_concurrency_tests
+    )
+
+    add_executable(
+        production_transition_evaluator_live_compile_tests
+        tests/production_transition_evaluator_live_compile_tests.cpp
+    )
+    target_link_libraries(
+        production_transition_evaluator_live_compile_tests
+        PRIVATE adaptive_mesh
+    )
+    add_test(
+        NAME run_production_transition_evaluator_live_compile_tests
+        COMMAND production_transition_evaluator_live_compile_tests
+    )
 endif()
 
 # ==============================================================================

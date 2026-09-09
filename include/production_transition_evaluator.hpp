@@ -1,11 +1,43 @@
 #pragma once
 
 #include <cstddef>
+#include <memory>
 
 namespace AdaptiveMesh {
 
+class ProductionTransitionEvaluator;
+class SpatialAdaptiveMesh;
+
 namespace detail {
 class ProductionTransitionEvaluationBackend;
+class ProductionTransitionEvaluatorBindingAccess;
+class ProductionTransitionEvaluatorLiveTestAccess;
+class ProductionTransitionEvaluationBinding;
+class EvaluationLease;
+class BindingState;
+
+class ProductionTransitionEvaluationBindingHandle final {
+public:
+    ProductionTransitionEvaluationBindingHandle(
+        const ProductionTransitionEvaluationBindingHandle&) noexcept = default;
+    ProductionTransitionEvaluationBindingHandle& operator=(
+        const ProductionTransitionEvaluationBindingHandle&) noexcept = default;
+
+private:
+    explicit ProductionTransitionEvaluationBindingHandle(
+        std::shared_ptr<BindingState> state) noexcept
+        : state_(std::move(state))
+    {
+    }
+
+    [[nodiscard]] EvaluationLease acquireEvaluationLease() const noexcept;
+
+    std::shared_ptr<BindingState> state_;
+
+    friend class ProductionTransitionEvaluationBinding;
+    friend class ProductionTransitionEvaluatorBindingAccess;
+    friend class ::AdaptiveMesh::ProductionTransitionEvaluator;
+};
 }
 
 struct ProductionTransitionEvaluationLocator final {
@@ -33,12 +65,17 @@ public:
 
 private:
     explicit ProductionTransitionEvaluator(
-        detail::ProductionTransitionEvaluationBackend& backend) noexcept
-        : backend_(&backend)
-    {
-    }
+        detail::ProductionTransitionEvaluationBindingHandle binding) noexcept
+        : binding_(std::move(binding)) {}
 
-    detail::ProductionTransitionEvaluationBackend* backend_;
+    // Compatibility seam for the pre-I2 synthetic contract tests only. It is
+    // private in supported production compilation.
+    explicit ProductionTransitionEvaluator(
+        detail::ProductionTransitionEvaluationBackend& backend);
+
+    detail::ProductionTransitionEvaluationBindingHandle binding_;
+
+    friend class detail::ProductionTransitionEvaluatorBindingAccess;
 };
 
 } // namespace AdaptiveMesh
