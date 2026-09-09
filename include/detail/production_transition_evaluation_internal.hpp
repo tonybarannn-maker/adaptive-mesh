@@ -13,6 +13,48 @@
 
 namespace AdaptiveMesh::detail {
 
+class ProductionPersistenceAccess;
+class ProductionPersistenceRecord;
+class ProductionTransitionEvaluatorLiveTestAccess;
+
+struct ProductionPersistenceState final {
+    double activationThreshold;
+    double releaseThreshold;
+    std::size_t activationSamples;
+    std::size_t releaseSamples;
+    std::size_t consecutiveSamples;
+    std::uint8_t recommendation;
+    std::uint8_t pendingDirection;
+
+    friend bool operator==(
+        const ProductionPersistenceState&,
+        const ProductionPersistenceState&) noexcept = default;
+};
+
+class ProductionPersistenceLineage final {
+public:
+    friend bool operator==(
+        const ProductionPersistenceLineage&,
+        const ProductionPersistenceLineage&) noexcept = default;
+
+private:
+    struct Identity final {};
+
+    ProductionPersistenceLineage()
+        : identity_(std::make_shared<const Identity>())
+    {
+    }
+
+    void advance() { identity_ = std::make_shared<const Identity>(); }
+
+    std::shared_ptr<const Identity> identity_;
+
+    friend class ProductionPersistenceAccess;
+    friend class ProductionPersistenceRecord;
+    friend class ProductionTransitionEvaluationBackend;
+    friend class ProductionTransitionEvaluatorLiveTestAccess;
+};
+
 class CapturedRelationshipIdentity final {
 public:
     [[nodiscard]] std::size_t sourceNodeId() const noexcept {
@@ -120,16 +162,30 @@ public:
         return lineage_;
     }
 
+    [[nodiscard]] const ProductionPersistenceState& persistenceState()
+        const noexcept {
+        return persistenceState_;
+    }
+
+    [[nodiscard]] const ProductionPersistenceLineage& persistenceLineage()
+        const noexcept {
+        return persistenceLineage_;
+    }
+
 private:
-    constexpr CoherentProductionTransitionSnapshot(
+    CoherentProductionTransitionSnapshot(
         CapturedRelationshipIdentity relationship,
         CapturedProductionStateVersion stateVersion,
         ResolvedTransitionClass transitionClass,
-        std::uint64_t lineage) noexcept
+        std::uint64_t lineage,
+        ProductionPersistenceState persistenceState,
+        ProductionPersistenceLineage persistenceLineage) noexcept
         : relationship_(relationship),
           stateVersion_(stateVersion),
           transitionClass_(transitionClass),
-          lineage_(lineage)
+          lineage_(lineage),
+          persistenceState_(persistenceState),
+          persistenceLineage_(std::move(persistenceLineage))
     {
     }
 
@@ -137,6 +193,8 @@ private:
     CapturedProductionStateVersion stateVersion_;
     ResolvedTransitionClass transitionClass_;
     std::uint64_t lineage_;
+    ProductionPersistenceState persistenceState_;
+    ProductionPersistenceLineage persistenceLineage_;
 
     friend class ProductionTransitionEvaluationBackend;
 };
@@ -229,6 +287,7 @@ private:
     std::uint64_t lineage_;
 
     friend class ProductionTransitionEvaluationBackend;
+    friend class ProductionTransitionEvaluatorLiveTestAccess;
 };
 
 enum class RequestDerivationStatus {
@@ -352,18 +411,22 @@ protected:
     }
 
     [[nodiscard]]
-    static constexpr SnapshotCaptureResult completeSnapshot(
+    static SnapshotCaptureResult completeSnapshot(
         const CapturedRelationshipIdentity& relationship,
         std::uint64_t stateVersion,
         std::uint64_t transitionClass,
-        std::uint64_t lineage) noexcept {
+        std::uint64_t lineage,
+        ProductionPersistenceState persistenceState = {},
+        ProductionPersistenceLineage persistenceLineage = {}) noexcept {
         return {
             SnapshotCaptureStatus::complete,
             CoherentProductionTransitionSnapshot{
                 relationship,
                 CapturedProductionStateVersion{stateVersion},
                 ResolvedTransitionClass{transitionClass},
-                lineage
+                lineage,
+                persistenceState,
+                std::move(persistenceLineage)
             }
         };
     }
@@ -598,28 +661,6 @@ private:
     friend class ProductionPersistenceAccess;
 };
 
-class ProductionPersistenceLineage final {
-public:
-    friend bool operator==(
-        const ProductionPersistenceLineage&,
-        const ProductionPersistenceLineage&) noexcept = default;
-
-private:
-    struct Identity final {};
-
-    ProductionPersistenceLineage()
-        : identity_(std::make_shared<const Identity>())
-    {
-    }
-
-    void advance() { identity_ = std::make_shared<const Identity>(); }
-
-    std::shared_ptr<const Identity> identity_;
-
-    friend class ProductionPersistenceAccess;
-    friend class ProductionPersistenceRecord;
-};
-
 class ProductionPersistenceRecord final {
 private:
     ProductionPersistenceRecord()
@@ -636,7 +677,21 @@ private:
 };
 
 class ProductionPersistenceAccess final {
-private:
+public:
+    [[nodiscard]] static ProductionPersistenceState state(
+        const BridgePersistence& persistence) noexcept {
+        const auto complete = persistence.completeState();
+        return {
+            complete.activationThreshold,
+            complete.releaseThreshold,
+            complete.activationSamples,
+            complete.releaseSamples,
+            complete.consecutiveSamples,
+            static_cast<std::uint8_t>(complete.recommendation),
+            static_cast<std::uint8_t>(complete.pendingDirection)
+        };
+    }
+
     [[nodiscard]] static ProductionPersistenceEvolutionResult evolve(
         BridgePersistence& persistence,
         const BridgePolicyEvidence& evidence) noexcept {
@@ -662,6 +717,11 @@ private:
     [[nodiscard]] static ProductionPersistenceLineage lineage(
         const ProductionPersistenceRecord& record) noexcept {
         return record.lineage_;
+    }
+
+    [[nodiscard]] static ProductionPersistenceState state(
+        const ProductionPersistenceRecord& record) noexcept {
+        return state(record.persistence_);
     }
 
     friend class ProductionTransitionEvaluatorLiveTestAccess;

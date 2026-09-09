@@ -315,3 +315,14 @@ implementation.
   permission, intent, execution, or mutation.
 - Originality, patentability, FTO, and non-infringement conclusions: none added
   by this implementation slice.
+
+### K12-I2-R1 — Persistence snapshot/revalidation remediation
+
+- Documentation date: 2026-09-09
+- Scope: complete authority-relevant persistence-state capture, separate
+  non-reusing persistence lineage capture, coherent final comparison, and
+  deterministic anti-resurrection/isolation/concurrency verification.
+- Persistence state remains private and observational; revalidation does not
+  update persistence or create authority.
+- D7 remains evidence-blocked. No observation/confidence producer, adaptive
+  evidence path, authority, intent, execution, or mutation mechanism is added.

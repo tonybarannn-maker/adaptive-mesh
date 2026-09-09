@@ -286,7 +286,11 @@ namespace AdaptiveMesh {
                     relationship,
                     current->authorityRelevantContextLineage,
                     transitionContractIdentity_,
-                    current->authorityRelevantContextLineage);
+                    current->authorityRelevantContextLineage,
+                    detail::ProductionPersistenceAccess::state(
+                        current->persistence),
+                    detail::ProductionPersistenceAccess::lineage(
+                        current->persistence));
             }
 
             [[nodiscard]] detail::RequestDerivationResult deriveDirection(
@@ -338,7 +342,13 @@ namespace AdaptiveMesh {
                     owner_.findLifecycleUnlocked(snapshot.relationship());
                 if (current == nullptr ||
                     current->authorityRelevantContextLineage !=
-                        snapshot.lineage()) {
+                        snapshot.lineage() ||
+                    detail::ProductionPersistenceAccess::state(
+                        current->persistence) !=
+                        snapshot.persistenceState() ||
+                    detail::ProductionPersistenceAccess::lineage(
+                        current->persistence) !=
+                        snapshot.persistenceLineage()) {
                     return detail::FinalRevalidationOutcome::stale;
                 }
                 return detail::FinalRevalidationOutcome::revalidated;

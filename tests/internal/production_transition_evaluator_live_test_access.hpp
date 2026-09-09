@@ -5,6 +5,7 @@
 #include <atomic>
 #include <memory>
 #include <optional>
+#include <shared_mutex>
 
 namespace AdaptiveMesh::detail {
 
@@ -148,6 +149,70 @@ public:
             SpatialAdaptiveMesh::EdgeKey{sourceNodeId, targetNodeId});
         if (found == mesh.productionRelationships_.end()) return std::nullopt;
         return found->second.authorityRelevantContextLineage;
+    }
+
+    [[nodiscard]] static detail::SnapshotCaptureResult captureSnapshot(
+        const SpatialAdaptiveMesh& mesh,
+        std::size_t sourceNodeId,
+        std::size_t targetNodeId) {
+        SpatialAdaptiveMesh::LiveProductionTransitionEvaluationBackend backend{
+            const_cast<SpatialAdaptiveMesh&>(mesh)};
+        const auto resolution = backend.resolveCurrentRelationship(
+            {sourceNodeId, targetNodeId});
+        return backend.captureSnapshot(*resolution.relationship());
+    }
+
+    [[nodiscard]] static detail::FinalRevalidationOutcome revalidate(
+        const SpatialAdaptiveMesh& mesh,
+        const detail::CoherentProductionTransitionSnapshot& snapshot) {
+        SpatialAdaptiveMesh::LiveProductionTransitionEvaluationBackend backend{
+            const_cast<SpatialAdaptiveMesh&>(mesh)};
+        const detail::ProductionDerivedDirection direction{
+            RequestedTransitionDirection::support,
+            snapshot.lineage()};
+        return backend.revalidate(snapshot, direction);
+    }
+
+    static void evolvePersistence(
+        SpatialAdaptiveMesh& mesh,
+        std::size_t sourceNodeId,
+        std::size_t targetNodeId,
+        const BridgePolicyEvidence& evidence) {
+        std::unique_lock lock(mesh.topologyMutex);
+        auto found = mesh.productionRelationships_.find(
+            SpatialAdaptiveMesh::EdgeKey{sourceNodeId, targetNodeId});
+        if (found == mesh.productionRelationships_.end()) return;
+        static_cast<void>(ProductionPersistenceAccess::evolve(
+            found->second.persistence, evidence));
+    }
+
+    static void evolvePersistenceUnderHeldLock(
+        SpatialAdaptiveMesh& mesh,
+        std::size_t sourceNodeId,
+        std::size_t targetNodeId,
+        const BridgePolicyEvidence& evidence) {
+        auto found = mesh.productionRelationships_.find(
+            SpatialAdaptiveMesh::EdgeKey{sourceNodeId, targetNodeId});
+        if (found == mesh.productionRelationships_.end()) return;
+        static_cast<void>(ProductionPersistenceAccess::evolve(
+            found->second.persistence, evidence));
+    }
+
+    [[nodiscard]] static std::unique_lock<std::shared_mutex> lockTopology(
+        SpatialAdaptiveMesh& mesh) {
+        return std::unique_lock<std::shared_mutex>(mesh.topologyMutex);
+    }
+
+    static void resetPersistence(
+        SpatialAdaptiveMesh& mesh,
+        std::size_t sourceNodeId,
+        std::size_t targetNodeId) {
+        std::unique_lock lock(mesh.topologyMutex);
+        auto found = mesh.productionRelationships_.find(
+            SpatialAdaptiveMesh::EdgeKey{sourceNodeId, targetNodeId});
+        if (found == mesh.productionRelationships_.end()) return;
+        static_cast<void>(ProductionPersistenceAccess::reset(
+            found->second.persistence.persistence_));
     }
 };
 

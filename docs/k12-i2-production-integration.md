@@ -84,3 +84,29 @@ This is a structural C++ misuse boundary, not a security boundary against
 arbitrary hostile code in the same process. It establishes neither transition
 authority nor system security, novelty, patentability, freedom to operate, or
 non-infringement.
+
+## K12-I2-R1 persistence snapshot/revalidation remediation
+
+R1 closes the final-review gap in the D1–D6 slice. A coherent production
+snapshot now captures the complete authority-relevant `BridgePersistence`
+state and a separate `ProductionPersistenceLineage`. The persistence state is
+read through a private library-owned seam; it is not exposed as a public getter,
+mutable access path, or persistence updater.
+
+Final revalidation compares both the complete persistence state and the
+separate persistence lineage under the same mesh coherence lock as the
+relationship lifecycle and authority-relevant context lineage. Any mismatch is
+reported as stale and terminates the attempt. Revalidation remains observational:
+it does not call `observe()` or `reset()`, recompute evidence, update the
+snapshot, or mutate persistence, topology, or node state.
+
+The deterministic R1 checks cover unchanged state, complete-state mutation,
+value-equivalent state resurrection with a new lineage, unrelated relationship
+mutation, and reverse-direction mutation. The concurrency check publishes the
+state and lineage together under the coherence lock, so evaluation observes a
+coherent old or new state, or fails closed; it cannot combine state from one
+publication with lineage from another.
+
+D7 remains evidence-blocked. No production observation/confidence producer,
+adaptive evidence path, direction derivation, authority, intent, execution, or
+mutation mechanism is added.

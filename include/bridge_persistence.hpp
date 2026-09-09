@@ -100,6 +100,10 @@ private:
     };
 
     struct CompleteState final {
+        double activationThreshold;
+        double releaseThreshold;
+        std::size_t activationSamples;
+        std::size_t releaseSamples;
         std::size_t consecutiveSamples;
         PersistentBridgeRecommendation recommendation;
         PendingDirection pendingDirection;
@@ -110,6 +114,10 @@ private:
 
     [[nodiscard]] CompleteState completeState() const noexcept {
         return {
+            activationThreshold_,
+            releaseThreshold_,
+            activationSamples_,
+            releaseSamples_,
             consecutiveSamples_,
             recommendation_,
             pendingDirection_

@@ -108,11 +108,86 @@ void test_library_owned_mesh_binding_fails_closed_without_d7() {
         "live mesh binding must fail closed while D7 provenance is absent");
 }
 
+void populateR1Mesh(AdaptiveMesh::SpatialAdaptiveMesh& mesh) {
+    mesh.addNode(0, {0.0, 0.0, 0.0}, 1.0);
+    mesh.addNode(1, {1.0, 0.0, 0.0}, 1.0);
+    mesh.addNode(2, {2.0, 0.0, 0.0}, 1.0);
+    mesh.addNode(3, {3.0, 0.0, 0.0}, 1.0);
+    mesh.connectNodes(0, 1);
+    mesh.connectNodes(2, 3);
+}
+
+AdaptiveMesh::BridgePolicyEvidence supportEvidence() {
+    return AdaptiveMesh::AdaptiveBridgePolicy{}.evaluate(
+        AdaptiveMesh::InteractionObservation(1.0),
+        AdaptiveMesh::BridgeConfidence(1.0));
+}
+
+void test_r1_persistence_snapshot_revalidation() {
+    using Status = AdaptiveMesh::detail::FinalRevalidationOutcome;
+
+    // R1-T1: unchanged persistence state and lineage remain current.
+    {
+        AdaptiveMesh::SpatialAdaptiveMesh mesh;
+        populateR1Mesh(mesh);
+        const auto capture = Access::captureSnapshot(mesh, 0, 1);
+        require(capture.snapshot().has_value(), "R1-T1 snapshot must complete");
+        require(Access::revalidate(mesh, *capture.snapshot()) ==
+                    Status::revalidated,
+                "R1-T1 unchanged state and lineage must remain current");
+    }
+
+    // R1-T2: complete persistence-state change advances lineage and stales.
+    {
+        AdaptiveMesh::SpatialAdaptiveMesh mesh;
+        populateR1Mesh(mesh);
+        const auto capture = Access::captureSnapshot(mesh, 0, 1);
+        Access::evolvePersistence(mesh, 0, 1, supportEvidence());
+        require(Access::revalidate(mesh, *capture.snapshot()) == Status::stale,
+                "R1-T2 complete persistence change must stale snapshot");
+    }
+
+    // R1-T3: value-equivalent resurrection remains stale through lineage.
+    {
+        AdaptiveMesh::SpatialAdaptiveMesh mesh;
+        populateR1Mesh(mesh);
+        const auto capture = Access::captureSnapshot(mesh, 0, 1);
+        Access::evolvePersistence(mesh, 0, 1, supportEvidence());
+        Access::evolvePersistence(mesh, 0, 1, supportEvidence());
+        Access::resetPersistence(mesh, 0, 1);
+        require(Access::revalidate(mesh, *capture.snapshot()) == Status::stale,
+                "R1-T3 value-equivalent resurrection must stale by lineage");
+    }
+
+    // R1-T4: unrelated relationship persistence does not stale A-to-B.
+    {
+        AdaptiveMesh::SpatialAdaptiveMesh mesh;
+        populateR1Mesh(mesh);
+        const auto capture = Access::captureSnapshot(mesh, 0, 1);
+        Access::evolvePersistence(mesh, 2, 3, supportEvidence());
+        require(Access::revalidate(mesh, *capture.snapshot()) ==
+                    Status::revalidated,
+                "R1-T4 unrelated persistence must not stale A-to-B");
+    }
+
+    // R1-T5: reverse relationship persistence does not stale A-to-B.
+    {
+        AdaptiveMesh::SpatialAdaptiveMesh mesh;
+        populateR1Mesh(mesh);
+        const auto capture = Access::captureSnapshot(mesh, 0, 1);
+        Access::evolvePersistence(mesh, 1, 0, supportEvidence());
+        require(Access::revalidate(mesh, *capture.snapshot()) ==
+                    Status::revalidated,
+                "R1-T5 reverse persistence must not stale A-to-B");
+    }
+}
+
 } // namespace
 
 int main() {
     test_fail_closed_binding();
     test_complete_persistence_change_detection();
     test_library_owned_mesh_binding_fails_closed_without_d7();
+    test_r1_persistence_snapshot_revalidation();
     return 0;
 }
