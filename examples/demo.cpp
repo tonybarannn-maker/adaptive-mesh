@@ -3,7 +3,7 @@
 
 int main() {
     using namespace AdaptiveMesh;
-    std::cout << "--- SOAM v1.1.0 Demonstration ---" << std::endl;
+    std::cout << "--- SOAM 2.0.0 Development Demonstration ---" << std::endl;
     
     SpatialAdaptiveMesh mesh;
     mesh.addNode(0, {0.0, 0.0, 0.0}, 1.618);

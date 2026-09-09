@@ -7,7 +7,13 @@
 | < 1.1.0 | :x:                |
 
 ## Scope
-This policy applies to the core C++20 framework (`include/system_architecture.hpp`), CI/CD workflows, and core documentation. External dependencies and third-party tools are outside the scope of this policy.
+This policy applies to the header-defined domain surface, the compiled static
+production runtime, the compiled K12 live companion, CI/CD workflows, and core
+documentation. Scenario-support code is test-only and is excluded from the
+installed/exported product. Production headers contain no consumer-selectable
+test friendship; scenario access exists only in isolated build-generated test
+configurations. External dependencies and third-party tools are
+outside the scope of this policy.
 
 ## Reporting Process
 Report vulnerabilities using one of the private contact methods documented by the repository (for example, a security contact email or GitHub Security Advisories, if enabled). Please do not report security vulnerabilities through public GitHub issues.

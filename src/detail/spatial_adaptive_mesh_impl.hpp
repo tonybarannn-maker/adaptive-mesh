@@ -1,229 +1,31 @@
-/**
- * @file system_architecture.hpp
- * @brief Self-Organizing Adaptive Mesh Architecture (C++20 Header-Only)
- * @version 1.1.0
- * @copyright Copyright (c) 2026 Безручко Микола Миколайович. All rights reserved.
- * @license Licensed under the GNU AGPLv3 (or Commercial License upon request).
- * Repository: https://github.com/tonybarannn-maker/adaptive-mesh
- */
+#pragma once
 
-#ifndef SYSTEM_ARCHITECTURE_HPP
-#define SYSTEM_ARCHITECTURE_HPP
+#include "system_architecture.hpp"
+#include "detail/production_transition_evaluation_internal.hpp"
 
-#include "production_transition_evaluator.hpp"
-
-#include <iostream>
-#include <vector>
-#include <cmath>
-#include <memory>
 #include <algorithm>
-#include <numeric>
-#include <mutex>
-#include <shared_mutex>
-#include <condition_variable>
 #include <atomic>
+#include <condition_variable>
+#include <cstdint>
+#include <exception>
+#include <memory>
+#include <mutex>
+#include <numeric>
+#include <shared_mutex>
 #include <thread>
-#include <stdexcept>
-#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
-#include <cstdint>
-
-#ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
+#include <vector>
+#if SOAM_PHASE_PROFILE_ENABLED
 #include <chrono>
 #endif
 
 namespace AdaptiveMesh {
 
-    inline void requireFinite(double value, const char* name) {
-        if (!std::isfinite(value)) {
-            throw std::invalid_argument(std::string{name} + " must be finite");
-        }
-    }
-
-    struct Vector3D {
-        double x = 0.0;
-        double y = 0.0;
-        double z = 0.0;
-
-        void validate() const {
-            requireFinite(x, "x");
-            requireFinite(y, "y");
-            requireFinite(z, "z");
-        }
-
-        [[nodiscard]] double distanceTo(const Vector3D& other) const {
-            validate();
-            other.validate();
-            const double dx = x - other.x;
-            const double dy = y - other.y;
-            const double dz = z - other.z;
-            requireFinite(dx, "distance dx");
-            requireFinite(dy, "distance dy");
-            requireFinite(dz, "distance dz");
-            const double distance = std::hypot(std::hypot(dx, dy), dz);
-            requireFinite(distance, "distance");
-            return distance;
-        }
-
-        [[nodiscard]] double orientationFactorTo(const Vector3D& target) const {
-            double dist = distanceTo(target);
-            if (dist < 1e-6) return 1.0;
-            double cosTheta = (target.z - z) / dist;
-            return 0.5 * (1.0 + cosTheta);
-        }
-    };
-
-    struct IdentityInvariant {
-        double baseline = 1.6180339887;
-        double maxEpsilon = 10.0;
-
-        void validate() const {
-            requireFinite(baseline, "baseline");
-            requireFinite(maxEpsilon, "maxEpsilon");
-            if (maxEpsilon <= 0.0) {
-                throw std::invalid_argument("maxEpsilon must be positive");
-            }
-        }
-
-        [[nodiscard]] bool isWithinSafetyBound(double state) const {
-            validate();
-            requireFinite(state, "state");
-            return std::abs(state - baseline) <= maxEpsilon;
-        }
-    };
-
-    enum class SignalCategory { NOISE, CREATIVE_SIGNAL, DESTRUCTIVE_DRIFT };
-    enum class BridgeStatus { NORMAL, DAMPING, RECOVERY, ISOLATED };
-
-    class MetaEvaluator {
-    public:
-        [[nodiscard]] SignalCategory evaluate(double candidateState,
-                                              double healthIndex,
-                                              const IdentityInvariant& omega) const
-        {
-            requireFinite(candidateState, "candidateState");
-            requireFinite(healthIndex, "healthIndex");
-            if (!omega.isWithinSafetyBound(candidateState)) {
-                return SignalCategory::DESTRUCTIVE_DRIFT;
-            }
-            double deltaFromBase = std::abs(candidateState - omega.baseline);
-            if (healthIndex > 0.7 && deltaFromBase > 1.2) {
-                return SignalCategory::CREATIVE_SIGNAL;
-            }
-            return SignalCategory::NOISE;
-        }
-    };
-
-    struct SpatialBridge {
-        int targetNodeId;
-        double distance;
-        double orientationWeight;
-        double capacity = 1.0;
-        BridgeStatus status = BridgeStatus::NORMAL;
-
-        void updateBridgeState(SignalCategory category) {
-            switch (category) {
-                case SignalCategory::NOISE:
-                    capacity = std::max(0.01, capacity * 0.85);
-                    status = BridgeStatus::DAMPING;
-                    break;
-                case SignalCategory::CREATIVE_SIGNAL:
-                    capacity = std::min(1.0, capacity + 0.15);
-                    status = (capacity >= 0.9) ? BridgeStatus::NORMAL : BridgeStatus::RECOVERY;
-                    break;
-                case SignalCategory::DESTRUCTIVE_DRIFT:
-                    capacity = 0.0;
-                    status = BridgeStatus::ISOLATED;
-                    break;
-            }
-        }
-
-        [[nodiscard]] double getEffectiveCoupling() const {
-            requireFinite(distance, "bridge distance");
-            requireFinite(orientationWeight, "bridge orientationWeight");
-            requireFinite(capacity, "bridge capacity");
-            if (distance < 0.0) {
-                throw std::invalid_argument("bridge distance must be non-negative");
-            }
-            if (orientationWeight < 0.0 || orientationWeight > 1.0) {
-                throw std::invalid_argument("bridge orientationWeight must be in [0, 1]");
-            }
-            if (capacity < 0.0 || capacity > 1.0) {
-                throw std::invalid_argument("bridge capacity must be in [0, 1]");
-            }
-            const double spatialAttenuation = 1.0 / (1.0 + 0.1 * distance);
-            const double coupling = capacity * spatialAttenuation * orientationWeight;
-            requireFinite(coupling, "effective coupling");
-            return coupling;
-        }
-
-        [[nodiscard]] double getEffectiveTransmission() const {
-            return getEffectiveCoupling();
-        }
-    };
-
-    class AutopoieticNode {
-    public:
-        size_t id;
-        Vector3D position;
-        std::atomic<double> state;
-        std::atomic<double> healthIndex{1.0};
-        IdentityInvariant invariant;
-        MetaEvaluator metaEvaluator;
-        std::vector<SpatialBridge> bridges;
-        mutable std::mutex nodeMutex;
-
-        AutopoieticNode(size_t nodeId, Vector3D pos, double initialBaseline)
-            : id(nodeId), position(pos), state(initialBaseline)
-        {
-            position.validate();
-            requireFinite(initialBaseline, "baseline");
-            invariant.baseline = initialBaseline;
-        }
-
-        AutopoieticNode(const AutopoieticNode& other)
-            : id(other.id), position(other.position), state(other.state.load()),
-              healthIndex(other.healthIndex.load()), invariant(other.invariant),
-              metaEvaluator(other.metaEvaluator), bridges(other.bridges) {}
-
-        void updateHealth() {
-            invariant.validate();
-            const double currentState = state.load();
-            requireFinite(currentState, "state");
-            double drift = std::abs(currentState - invariant.baseline);
-            healthIndex.store(std::max(0.0, 1.0 - (drift / invariant.maxEpsilon)));
-        }
-
-        [[nodiscard]] double applyLocalReflexFilter(double rawInput) const {
-            requireFinite(rawInput, "rawInput");
-            double maxAllowedReflexStep = 3.5;
-            double currentState = state.load();
-            requireFinite(currentState, "state");
-            double delta = rawInput - currentState;
-            if (std::abs(delta) > maxAllowedReflexStep) {
-                return currentState + (delta > 0 ? maxAllowedReflexStep : -maxAllowedReflexStep);
-            }
-            return rawInput;
-        }
-    };
-
-#ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
-    struct SimulationPhaseProfile {
-        double preValidationMicroseconds = 0.0;
-        double workerPoolReadyMicroseconds = 0.0;
-        double bufferPreparationMicroseconds = 0.0;
-        double workerDispatchWaitMicroseconds = 0.0;
-        double resultValidationMicroseconds = 0.0;
-        double commitMicroseconds = 0.0;
-        double postValidationMicroseconds = 0.0;
-    };
-#endif
-
-    class SpatialAdaptiveMesh {
+struct SpatialAdaptiveMesh::Impl {
     private:
-        friend class detail::ProductionTransitionEvaluatorLiveTestAccess;
+        friend class detail::ProductionTransitionEvaluatorScenarioAccess;
 
         using EdgeKey = std::pair<size_t, size_t>;
 
@@ -252,7 +54,7 @@ namespace AdaptiveMesh {
             : public detail::ProductionTransitionEvaluationBackend {
         public:
             explicit LiveProductionTransitionEvaluationBackend(
-                SpatialAdaptiveMesh& owner) noexcept
+                Impl& owner) noexcept
                 : owner_(owner)
             {
             }
@@ -356,7 +158,7 @@ namespace AdaptiveMesh {
 
         private:
             static constexpr std::uint64_t transitionContractIdentity_ = 1;
-            SpatialAdaptiveMesh& owner_;
+            Impl& owner_;
         };
 
         std::vector<AutopoieticNode> nodes;
@@ -395,7 +197,7 @@ namespace AdaptiveMesh {
         bool topologyValidationRequired = true;
         std::unique_ptr<detail::ProductionTransitionEvaluationBinding>
             productionTransitionEvaluationBinding_;
-#ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
+#if SOAM_PHASE_PROFILE_ENABLED
         SimulationPhaseProfile lastSimulationPhaseProfile{};
 #endif
 
@@ -716,26 +518,26 @@ namespace AdaptiveMesh {
         }
 
     public:
-        explicit SpatialAdaptiveMesh(size_t maxWorkers = 0)
+        explicit Impl(size_t maxWorkers = 0)
             : workerLimit(maxWorkers),
               productionTransitionEvaluationBinding_(
-                  detail::ProductionTransitionEvaluatorBindingAccess::
-                      bindingForOwner(
+                  std::make_unique<
+                      detail::ProductionTransitionEvaluationBinding>(
                           std::make_shared<
                               LiveProductionTransitionEvaluationBackend>(
                                   *this)))
         {
         }
 
-        ~SpatialAdaptiveMesh() {
+        ~Impl() {
             productionTransitionEvaluationBinding_->invalidateAndDrain();
             stopWorkerPool();
         }
 
-        SpatialAdaptiveMesh(const SpatialAdaptiveMesh&) = delete;
-        SpatialAdaptiveMesh& operator=(const SpatialAdaptiveMesh&) = delete;
-        SpatialAdaptiveMesh(SpatialAdaptiveMesh&&) = delete;
-        SpatialAdaptiveMesh& operator=(SpatialAdaptiveMesh&&) = delete;
+        Impl(const Impl&) = delete;
+        Impl& operator=(const Impl&) = delete;
+        Impl(Impl&&) = delete;
+        Impl& operator=(Impl&&) = delete;
 
         void addNode(size_t id, Vector3D pos, double baseline) {
             pos.validate();
@@ -938,18 +740,18 @@ namespace AdaptiveMesh {
         }
 
         void simulationStep() {
-#ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
+#if SOAM_PHASE_PROFILE_ENABLED
             SimulationPhaseProfile profile{};
             const auto preValidationStart = std::chrono::steady_clock::now();
 #endif
             std::unique_lock lock(topologyMutex);
             validateTopologyAndStateUnlocked();
-#ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
+#if SOAM_PHASE_PROFILE_ENABLED
             const auto workerPoolStart = std::chrono::steady_clock::now();
             profile.preValidationMicroseconds = std::chrono::duration<double, std::micro>(workerPoolStart - preValidationStart).count();
 #endif
             ensureWorkerPoolUnlocked();
-#ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
+#if SOAM_PHASE_PROFILE_ENABLED
             const auto bufferPreparationStart = std::chrono::steady_clock::now();
             profile.workerPoolReadyMicroseconds = std::chrono::duration<double, std::micro>(bufferPreparationStart - workerPoolStart).count();
 #endif
@@ -966,7 +768,7 @@ namespace AdaptiveMesh {
                 }
                 simulationBufferShapeDirty = false;
             }
-#ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
+#if SOAM_PHASE_PROFILE_ENABLED
             const auto dispatchStart = std::chrono::steady_clock::now();
             profile.bufferPreparationMicroseconds = std::chrono::duration<double, std::micro>(dispatchStart - bufferPreparationStart).count();
 #endif
@@ -980,7 +782,7 @@ namespace AdaptiveMesh {
                     pendingBridgeCapacities,
                     pendingBridgeStatuses,
                     pendingBridgeChanged);
-#ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
+#if SOAM_PHASE_PROFILE_ENABLED
                 const auto directResultValidationStart = std::chrono::steady_clock::now();
                 profile.workerDispatchWaitMicroseconds =
                     std::chrono::duration<double, std::micro>(
@@ -1001,14 +803,14 @@ namespace AdaptiveMesh {
                 }
                 workAvailable.notify_all();
                 {
-#ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
+#if SOAM_PHASE_PROFILE_ENABLED
                     const auto waitStart = std::chrono::steady_clock::now();
 #endif
                     std::unique_lock workLock(workMutex);
                     workCompleted.wait(workLock, [this] {
                         return completedWorkerCount == activeWorkerCount;
                     });
-#ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
+#if SOAM_PHASE_PROFILE_ENABLED
                     const auto resultValidationStart = std::chrono::steady_clock::now();
                     profile.workerDispatchWaitMicroseconds =
                         std::chrono::duration<double, std::micro>(
@@ -1024,13 +826,13 @@ namespace AdaptiveMesh {
                     if (error) std::rethrow_exception(error);
                 }
             }
-#ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
+#if SOAM_PHASE_PROFILE_ENABLED
             const auto resultValidationStart = std::chrono::steady_clock::now();
 #endif
             for (size_t i = 0; i < nodes.size(); ++i) {
                 if (!std::isfinite(computedStates[i])) throw std::runtime_error("simulation produced a non-finite state");
             }
-#ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
+#if SOAM_PHASE_PROFILE_ENABLED
             const auto resultValidationEnd = std::chrono::steady_clock::now();
             profile.resultValidationMicroseconds = std::chrono::duration<double, std::micro>(resultValidationEnd - resultValidationStart).count();
 #endif
@@ -1044,17 +846,17 @@ namespace AdaptiveMesh {
                     nodes[i].bridges[bridgeIndex].status = pendingBridgeStatuses[i][bridgeIndex];
                 }
             }
-#ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
+#if SOAM_PHASE_PROFILE_ENABLED
             const auto postValidationStart = std::chrono::steady_clock::now();
 #endif
-#ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
+#if SOAM_PHASE_PROFILE_ENABLED
             const auto profileEnd = std::chrono::steady_clock::now();
             profile.postValidationMicroseconds = std::chrono::duration<double, std::micro>(profileEnd - postValidationStart).count();
             lastSimulationPhaseProfile = profile;
 #endif
         }
 
-#ifdef ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
+#if SOAM_PHASE_PROFILE_ENABLED
         [[nodiscard]] SimulationPhaseProfile getLastSimulationPhaseProfile() const {
             std::shared_lock lock(topologyMutex);
             return lastSimulationPhaseProfile;
@@ -1063,10 +865,9 @@ namespace AdaptiveMesh {
 
         void simulationStepAsync() { simulationStep(); }
 
-        [[nodiscard]] ProductionTransitionEvaluator
-        productionTransitionEvaluator() const noexcept {
-            return detail::ProductionTransitionEvaluatorBindingAccess::
-                evaluator(*productionTransitionEvaluationBinding_);
+        [[nodiscard]] detail::ProductionTransitionEvaluationBindingHandle
+        evaluationHandle() const noexcept {
+            return productionTransitionEvaluationBinding_->handle();
         }
 
         [[nodiscard]] double getNodeState(size_t id) const {
@@ -1086,5 +887,3 @@ namespace AdaptiveMesh {
     };
 
 } // namespace AdaptiveMesh
-
-#endif // SYSTEM_ARCHITECTURE_HPP

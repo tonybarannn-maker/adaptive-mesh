@@ -1,7 +1,7 @@
 # SOAM AI Agent Security Policy
 
 **Policy Version:** 1.0  
-**Applies to:** SOAM v1.1.0  
+**Applies to:** released SOAM v1.1.0 and the SOAM 2.0 development line
 **Status:** Stable  
 **Last Updated:** 2026-08-04  
 
@@ -56,6 +56,10 @@ The following components of the SOAM core are considered security-critical. Any 
 * `MetaEvaluator`
 * Consensus logic
 * Global invariants
+* Generated runtime access-topology headers
+
+Consumer-controlled macros MUST NOT add test friendship or evaluator/binding
+construction privilege to the supported production compilation surface.
 
 ---
 

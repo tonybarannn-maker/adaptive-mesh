@@ -1,5 +1,16 @@
 # API Semantics
 
+## Build and linkage contract
+
+Value/domain-only consumers link `AdaptiveMesh::adaptive_mesh_domain`.
+Consumers that construct `SpatialAdaptiveMesh`, `AutopoieticNode`, or
+`SpatialBridge` link `AdaptiveMesh::adaptive_mesh`. Calling
+`productionTransitionEvaluator()` additionally requires
+`AdaptiveMesh::adaptive_mesh_k12_live`.
+
+The supported public method signatures are preserved, but runtime linkage is a
+breaking SOAM 2.0 build-contract change.
+
 ## Simulation steps
 
 `SpatialAdaptiveMesh::simulationStep()` is the canonical blocking API. It returns only after one complete simulation step has finished and the resulting node and bridge state has been committed and validated.

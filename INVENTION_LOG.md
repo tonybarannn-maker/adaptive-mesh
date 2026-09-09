@@ -1,5 +1,16 @@
 # SOAM Invention and Provenance Log
 
+## 2026-09-09 — Compiled production-boundary migration
+
+- Recorded the SOAM 2.0 development migration from a consumer-visible
+  header-only runtime to an installed domain target plus static runtime.
+- Moved authoritative lifecycle/currentness and live K12 mechanics behind
+  compiled production-owned boundaries.
+- Replaced consumer-completable privileged test friendship with an isolated,
+  closed scenario artifact covering the frozen S1–S8 set.
+- This entry records engineering provenance only; it makes no novelty,
+  patentability, FTO, or commercialization claim.
+
 **Baseline documentation date:** 2026-09-06
 **Status:** Engineering provenance record
 

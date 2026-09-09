@@ -6,9 +6,9 @@
 
 ## 1. Core Technological Claims (Основні технічні твердження)
 
-### Claim A: C++20 Header-Only Framework
-* **Твердження:** Проєкт реалізовано як легку заголовочну бібліотеку стандарту C++20 без сторонніх runtime-залежностей.
-* **Доказ у коді (Code Evidence):** `include/system_architecture.hpp` (класи `AutopoieticNode`, `SpatialBridge`, `SpatialAdaptiveMesh`).
+### Claim A: C++20 Domain/Compiled-Runtime Split
+* **Твердження:** Domain/value surface є header-defined, а production lifecycle та simulation runtime належать compiled static library.
+* **Доказ у коді (Code Evidence):** `include/soam_domain.hpp`, `cmake/templates/system_architecture.hpp.in`, `src/system_architecture.cpp` та `src/detail/spatial_adaptive_mesh_impl.hpp`.
 * **Доказ збіжки (Build Evidence):** `CMakeLists.txt` (`set(CMAKE_CXX_STANDARD 20)`).
 * **Доказ суворої компіляції (Strict Compilation Logs):** Контур CI у `.github/workflows/ci.yml` із прапорцями `-Wall -Wextra -Wpedantic -Wconversion -Wshadow -Werror`.
 

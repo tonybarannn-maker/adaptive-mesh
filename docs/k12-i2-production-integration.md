@@ -2,7 +2,9 @@
 
 ## Status
 
-This implementation contains only the authorized non-D7 slice. It adds a
+The live K12 slice is provided by the compiled static
+`AdaptiveMesh::adaptive_mesh_k12_live` companion. It contains only the
+authorized non-D7 slice and adds a
 library-owned live evaluator binding, lifetime-safe evaluation leases,
 invalidation-and-drain semantics, and private complete-state change detection
 for `BridgePersistence`.
@@ -10,6 +12,11 @@ for `BridgePersistence`.
 Production observation, confidence, adaptive evidence production, persistence
 updates from adaptive evidence, and BM-2 floor materialization are absent.
 The D7 floor-design branch remains evidence-blocked.
+
+Authoritative relationship lifecycle/currentness storage belongs to the
+compiled `AdaptiveMesh::adaptive_mesh` runtime. The companion reads that truth;
+it does not originate or duplicate it. Scenario support is a closed
+BUILD_TESTS-only artifact and is not installed or exported.
 
 ## Lifetime contract
 

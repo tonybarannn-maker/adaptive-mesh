@@ -1,4 +1,3 @@
-#define ADAPTIVE_MESH_ENABLE_PHASE_PROFILE
 #include "system_architecture.hpp"
 
 #include <cmath>
@@ -129,4 +128,3 @@ int main() {
         return EXIT_FAILURE;
     }
 }
-

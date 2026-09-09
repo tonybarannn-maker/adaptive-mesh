@@ -2,7 +2,6 @@
 #include "system_architecture.hpp"
 
 #include <cstddef>
-#include <memory>
 #include <type_traits>
 #include <utility>
 
@@ -21,9 +20,6 @@ static_assert(!std::is_constructible_v<
     detail::ProductionTransitionEvaluationBackend&>);
 static_assert(!std::is_default_constructible_v<
     detail::ProductionTransitionEvaluationBindingHandle>);
-static_assert(!std::is_constructible_v<
-    detail::ProductionTransitionEvaluationBinding,
-    std::shared_ptr<detail::ProductionTransitionEvaluationBackend>>);
 static_assert(std::is_same_v<
     decltype(std::declval<const SpatialAdaptiveMesh&>().
         productionTransitionEvaluator()),

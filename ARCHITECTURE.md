@@ -1,12 +1,18 @@
 # Self-Organizing Adaptive Mesh: Architecture Specification
 
-**Version:** 1.1.0  
-**Status:** Approved  
+**Version:** 2.0.0 development
+**Status:** Compiled-runtime migration
 **Domain:** Distributed Adaptive Systems / Second-Order Cybernetics  
 
 ---
 
 ## 1. System Overview & Mathematical Core
+
+The installed architecture consists of a header-defined domain target,
+`AdaptiveMesh::adaptive_mesh_domain`, and a static production runtime,
+`AdaptiveMesh::adaptive_mesh`. Live K12 evaluation is supplied by the static
+`AdaptiveMesh::adaptive_mesh_k12_live` companion. Test scenario artifacts are
+not part of the installed or exported product.
 
 Ця специфікація описує архітектуру **адаптивної самоорганізованої мережі (Self-Organizing Adaptive Mesh)**, що поєднує принципи класичної теорії керування, просторової дифузії та кібернетики другого порядку. 
 
