@@ -297,3 +297,21 @@ token/credential issuance, or aggregate authority generation.
 Any future eligibility-to-authority, credential, capability, execution, or
 mutation mechanism requires a new architecture/originality/FTO gate before
 implementation.
+
+### K12-I2 — Production integration, D1–D6 safe partition
+
+- Documentation date: 2026-09-09
+- Baseline: `525d9f44cf93d3f64082279e5c94e7461e322048`
+- Scope: library-owned evaluator binding, lifetime-aware handle and evaluation
+  lease, invalidate-and-drain ordering, private complete-state persistence
+  change detection, and deterministic verification.
+- D7 status: evidence-blocked; no production observation/confidence producer,
+  BM-2 floor, adaptive evidence updater, or adaptive recommendation derivation
+  is implemented.
+- Live behavior while D7 provenance is unavailable: fail closed to
+  `not_eligible`, then `STOP`.
+- Authority boundary: binding lifetime is not state currentness; persistence
+  change detection is not persistence updater authority; eligibility is not
+  permission, intent, execution, or mutation.
+- Originality, patentability, FTO, and non-infringement conclusions: none added
+  by this implementation slice.
