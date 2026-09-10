@@ -2,7 +2,11 @@
 
 ## Status
 
-K12-I1 implements the frozen production prerequisite orchestration boundary as a header-only, eligibility-only component. It does not integrate with live `SpatialAdaptiveMesh` state. The production-state backend used by behavioral and concurrency tests is synthetic and test-owned. Live production integration remains a separate K12-I2 gate.
+K12-I1 historically established the eligibility-only orchestration contract.
+K12-I2 subsequently integrated that contract with live `SpatialAdaptiveMesh`
+state. In SOAM 2.0 the implementation is behind the compiled
+`AdaptiveMesh::adaptive_mesh_k12_live` boundary; this physical migration does
+not alter the frozen K12-I1 eligibility semantics.
 
 The terminal positive result remains:
 
@@ -41,7 +45,12 @@ Reusing the same locator cannot reuse an old relationship generation, state vers
 
 ## Construction privilege
 
-K11 restricted-origin values have one production construction owner: `AdaptiveMesh::detail::ProductionTransitionConstructionAccess`. K11 public constructors remain unchanged; only private access topology is extended. The complete construction-access definition lives in `include/detail/production_transition_evaluation_internal.hpp`.
+K11 restricted-origin values have one production construction owner:
+`AdaptiveMesh::detail::ProductionTransitionConstructionAccess`. K11 public
+constructors remain unchanged; only private access topology is extended. The complete
+construction-access definition is private compiled implementation in
+`src/detail/production_transition_evaluation_internal.hpp` and is not part of
+the installed header surface.
 
 Construction privilege is separate from validation authority. Each prerequisite domain produces a distinct typed validation result. The construction access type can only materialize the matching K11 evidence. There is no generic `kind + bool` evidence materializer.
 
@@ -61,7 +70,7 @@ K12-I1 verifies these semantics with a deterministic synthetic state owner. It d
 
 ## Test separation and concurrency
 
-`tests/internal/production_transition_evaluator_test_access.hpp` is synthetic test infrastructure only. Production K12 code does not include it. Existing K11 test access remains independent from production construction access.
+Live regression tests call only the closed S1–S8 scenario surface. The scenario implementation is compiled from the same authoritative production source set in an isolated test configuration. No consumer-visible friend type, generic backend injection, or evaluator-construction privilege is provided.
 
 Concurrency tests use synchronization barriers, not sleeps, to force changes between capture and final revalidation. They verify relevant-state staleness, irrelevant-domain stability, relationship reincarnation invalidation, and independent concurrent attempts. No automatic retry exists.
 

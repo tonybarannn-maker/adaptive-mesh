@@ -4,8 +4,11 @@
 #include <cstdlib>
 #include <cstddef>
 #include <vector>
+#include <type_traits>
 
 using namespace AdaptiveMesh;
+
+static_assert(!std::is_copy_constructible_v<SpatialAdaptiveMesh>);
 
 namespace {
 

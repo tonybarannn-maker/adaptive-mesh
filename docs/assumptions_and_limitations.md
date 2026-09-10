@@ -1,6 +1,6 @@
 # Assumptions and Limitations Specification
 
-**System Version:** 1.1.0  
+**System Version:** 2.0.0 development
 **Target Domain:** Distributed Self-Organizing Mesh / Autonomous Systems
 
 ---

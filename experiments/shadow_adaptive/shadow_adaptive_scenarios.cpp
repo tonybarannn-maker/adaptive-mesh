@@ -1,5 +1,4 @@
 #include "shadow_adaptive_controller.hpp"
-#include "system_architecture.hpp"
 
 #include <cstdlib>
 #include <iostream>
@@ -10,16 +9,12 @@
 namespace {
 
 using AdaptiveMesh::AdaptiveBridgePolicy;
-using AdaptiveMesh::AutopoieticNode;
 using AdaptiveMesh::BridgeConfidence;
 using AdaptiveMesh::BridgePersistence;
 using AdaptiveMesh::BridgePolicyEvidence;
-using AdaptiveMesh::BridgeStatus;
 using AdaptiveMesh::BridgeTransitionPermissions;
 using AdaptiveMesh::InteractionObservation;
 using AdaptiveMesh::PersistentBridgeRecommendation;
-using AdaptiveMesh::SpatialBridge;
-using AdaptiveMesh::Vector3D;
 using AdaptiveMesh::experiment::ShadowAdaptiveController;
 using AdaptiveMesh::experiment::ShadowAdaptiveInput;
 using AdaptiveMesh::experiment::ShadowTransitionDisposition;
@@ -166,75 +161,6 @@ private:
     std::optional<PersistentBridgeRecommendation> previousPersistent_;
     std::optional<ShadowTransitionDisposition> previousShadow_;
 };
-
-struct BridgeSnapshot {
-    int targetNodeId;
-    double capacity;
-    BridgeStatus status;
-};
-
-struct FixtureSnapshot {
-    double state;
-    double health;
-    std::vector<BridgeSnapshot> bridges;
-};
-
-[[nodiscard]]
-FixtureSnapshot snapshot(const AutopoieticNode& node)
-{
-    FixtureSnapshot result{
-        node.state.load(),
-        node.healthIndex.load(),
-        {}
-    };
-
-    result.bridges.reserve(node.bridges.size());
-
-    for (const SpatialBridge& bridge : node.bridges) {
-        result.bridges.push_back(
-            BridgeSnapshot{
-                bridge.targetNodeId,
-                bridge.capacity,
-                bridge.status
-            });
-    }
-
-    return result;
-}
-
-void requireSameSnapshot(
-    const FixtureSnapshot& before,
-    const FixtureSnapshot& after)
-{
-    require(
-        before.state == after.state,
-        "runtime isolation: node state changed");
-
-    require(
-        before.health == after.health,
-        "runtime isolation: node health changed");
-
-    require(
-        before.bridges.size() == after.bridges.size(),
-        "runtime isolation: bridge count changed");
-
-    for (std::size_t i = 0; i < before.bridges.size(); ++i) {
-        require(
-            before.bridges[i].targetNodeId ==
-                after.bridges[i].targetNodeId,
-            "runtime isolation: bridge target changed");
-
-        require(
-            before.bridges[i].capacity ==
-                after.bridges[i].capacity,
-            "runtime isolation: bridge capacity changed");
-
-        require(
-            before.bridges[i].status ==
-                after.bridges[i].status,
-            "runtime isolation: bridge status changed");
-    }
-}
 
 void scenarioS01StableEvidence()
 {
@@ -416,25 +342,6 @@ void scenarioS06LocalizedFixtureChange()
 
 int main()
 {
-    AutopoieticNode productionFixture(
-        900,
-        Vector3D{0.0, 0.0, 0.0},
-        1.6180339887);
-
-    productionFixture.state.store(1.25);
-    productionFixture.healthIndex.store(0.90);
-    productionFixture.bridges.push_back(
-        SpatialBridge{
-            901,
-            2.0,
-            0.75,
-            0.80,
-            BridgeStatus::RECOVERY
-        });
-
-    const FixtureSnapshot before =
-        snapshot(productionFixture);
-
     scenarioS01StableEvidence();
     scenarioS02PersistentDegradation();
     scenarioS03RecoveryThroughPreserve();
@@ -442,12 +349,7 @@ int main()
     scenarioS05AlternatingEvidence();
     scenarioS06LocalizedFixtureChange();
 
-    const FixtureSnapshot after =
-        snapshot(productionFixture);
-
-    requireSameSnapshot(before, after);
-
-    std::cout << "K10 runtime isolation: PASS\n";
+    std::cout << "K10 runtime isolation: structural PASS\n";
     std::cout << "K10 shadow scenarios: PASS\n";
 
     return EXIT_SUCCESS;

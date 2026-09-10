@@ -1,4 +1,5 @@
 #include "bridge_transition_authorization.hpp"
+#include "production_transition_eligibility.hpp"
 #include "production_transition_evaluator.hpp"
 
 #include <cstddef>
@@ -22,10 +23,6 @@ static_assert(!std::is_constructible_v<InvariantPrerequisiteEvidence, bool>);
 static_assert(!std::is_constructible_v<ResiliencePrerequisiteEvidence, bool>);
 static_assert(!std::is_constructible_v<FreshnessPrerequisiteEvidence, bool>);
 static_assert(!std::is_constructible_v<RevalidationPrerequisiteEvidence, bool>);
-static_assert(!std::is_constructible_v<detail::PermissionValidationResult, bool, std::uint64_t>);
-static_assert(!std::is_constructible_v<detail::InvariantValidationResult, bool, std::uint64_t>);
-static_assert(!std::is_constructible_v<detail::ResilienceValidationResult, bool, std::uint64_t>);
-static_assert(!std::is_constructible_v<detail::FreshnessValidationResult, bool, std::uint64_t>);
 static_assert(!std::is_convertible_v<ProductionTransitionEvaluationLocator, ProductionRelationshipIdentity>);
 static_assert(!std::is_convertible_v<ProductionTransitionEvaluationLocator, ProductionTransitionRequestBinding>);
 static_assert(!std::is_convertible_v<ProductionTransitionEvaluation, BridgeTransitionPermissions>);

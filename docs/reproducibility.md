@@ -1,6 +1,9 @@
 # Reproducibility Specification
 
-The current reference implementation is a header-only C++20 library built with CMake 3.25 or newer. The CI workflow configures a Release build with warnings as errors and separately runs a Debug AddressSanitizer/UndefinedBehaviorSanitizer build on Ubuntu.
+The current reference implementation has a header-defined C++20 domain surface
+and a compiled static production runtime built with CMake 3.25 or newer. Normal,
+phase-profile, and scenario-test runtimes are build-owned, isolated
+configurations; consumer-local profiling macros are not supported.
 
 ## Runtime configuration
 

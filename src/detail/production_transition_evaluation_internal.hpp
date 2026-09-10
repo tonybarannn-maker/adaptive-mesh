@@ -15,7 +15,7 @@ namespace AdaptiveMesh::detail {
 
 class ProductionPersistenceAccess;
 class ProductionPersistenceRecord;
-class ProductionTransitionEvaluatorLiveTestAccess;
+class ProductionTransitionEvaluatorScenarioAccess;
 
 struct ProductionPersistenceState final {
     double activationThreshold;
@@ -52,7 +52,7 @@ private:
     friend class ProductionPersistenceAccess;
     friend class ProductionPersistenceRecord;
     friend class ProductionTransitionEvaluationBackend;
-    friend class ProductionTransitionEvaluatorLiveTestAccess;
+    friend class ProductionTransitionEvaluatorScenarioAccess;
 };
 
 class CapturedRelationshipIdentity final {
@@ -287,7 +287,7 @@ private:
     std::uint64_t lineage_;
 
     friend class ProductionTransitionEvaluationBackend;
-    friend class ProductionTransitionEvaluatorLiveTestAccess;
+    friend class ProductionTransitionEvaluatorScenarioAccess;
 };
 
 enum class RequestDerivationStatus {
@@ -480,6 +480,7 @@ private:
     friend class ProductionTransitionEvaluationBindingHandle;
     friend class ProductionTransitionEvaluationBinding;
     friend class ProductionTransitionEvaluatorBindingAccess;
+    friend class ProductionTransitionEvaluatorScenarioAccess;
 };
 
 class EvaluationLease final {
@@ -553,14 +554,13 @@ ProductionTransitionEvaluationBindingHandle::acquireEvaluationLease()
 }
 
 class ProductionTransitionEvaluationBinding final {
-private:
+public:
     explicit ProductionTransitionEvaluationBinding(
         std::shared_ptr<ProductionTransitionEvaluationBackend> backend)
         : state_(std::make_shared<BindingState>(std::move(backend)))
     {
     }
 
-public:
     ProductionTransitionEvaluationBinding(
         const ProductionTransitionEvaluationBinding&) = delete;
     ProductionTransitionEvaluationBinding& operator=(
@@ -579,60 +579,16 @@ public:
         state_->backend_.reset();
     }
 
-private:
     [[nodiscard]] ProductionTransitionEvaluationBindingHandle handle()
         const noexcept {
         return ProductionTransitionEvaluationBindingHandle{state_};
     }
 
+private:
     std::shared_ptr<BindingState> state_;
 
     friend class ProductionTransitionEvaluatorBindingAccess;
-};
-
-class ProductionTransitionEvaluatorBindingAccess final {
-public:
-    [[nodiscard]] static ProductionTransitionEvaluator evaluator(
-        const ProductionTransitionEvaluationBinding& binding) noexcept {
-        return ProductionTransitionEvaluator{binding.handle()};
-    }
-
-private:
-    [[nodiscard]] static std::unique_ptr<ProductionTransitionEvaluationBinding>
-    bindingForOwner(
-        std::shared_ptr<ProductionTransitionEvaluationBackend> backend) {
-        return std::unique_ptr<ProductionTransitionEvaluationBinding>(
-            new ProductionTransitionEvaluationBinding(std::move(backend)));
-    }
-
-    [[nodiscard]] static std::unique_ptr<ProductionTransitionEvaluationBinding>
-    bindingForTest(
-        std::shared_ptr<ProductionTransitionEvaluationBackend> backend) {
-        return std::unique_ptr<ProductionTransitionEvaluationBinding>(
-            new ProductionTransitionEvaluationBinding(std::move(backend)));
-    }
-
-    [[nodiscard]] static EvaluationLease acquireLeaseForTest(
-        const ProductionTransitionEvaluationBindingHandle& handle) noexcept {
-        return handle.acquireEvaluationLease();
-    }
-
-    [[nodiscard]] static ProductionTransitionEvaluationBindingHandle
-    handleForTest(
-        const ProductionTransitionEvaluationBinding& binding) noexcept {
-        return binding.handle();
-    }
-
-    static void waitUntilInvalidatedForTest(
-        const ProductionTransitionEvaluationBinding& binding) noexcept {
-        std::unique_lock lock(binding.state_->mutex_);
-        binding.state_->drained_.wait(lock, [&binding] {
-            return !binding.state_->acceptingLeases_;
-        });
-    }
-
-    friend class ProductionTransitionEvaluatorLiveTestAccess;
-    friend class ::AdaptiveMesh::SpatialAdaptiveMesh;
+    friend class ProductionTransitionEvaluatorScenarioAccess;
 };
 
 class ProductionPersistenceEvolutionResult final {
@@ -672,7 +628,7 @@ private:
     ProductionPersistenceLineage lineage_;
 
     friend class ProductionPersistenceAccess;
-    friend class ProductionTransitionEvaluatorLiveTestAccess;
+    friend class ProductionTransitionEvaluatorScenarioAccess;
     friend class ::AdaptiveMesh::SpatialAdaptiveMesh;
 };
 
@@ -724,7 +680,7 @@ public:
         return state(record.persistence_);
     }
 
-    friend class ProductionTransitionEvaluatorLiveTestAccess;
+    friend class ProductionTransitionEvaluatorScenarioAccess;
     friend class ::AdaptiveMesh::SpatialAdaptiveMesh;
 };
 
@@ -1158,26 +1114,3 @@ public:
 };
 
 } // namespace AdaptiveMesh::detail
-
-namespace AdaptiveMesh {
-
-inline ProductionTransitionEvaluation ProductionTransitionEvaluator::evaluate(
-    const ProductionTransitionEvaluationLocator& locator) {
-    auto lease = binding_.acquireEvaluationLease();
-    if (!lease) {
-        return ProductionTransitionEvaluation::not_eligible;
-    }
-    return detail::ProductionTransitionEvaluationOrchestrator::evaluate(
-        lease.backend(), locator);
-}
-
-inline ProductionTransitionEvaluator::ProductionTransitionEvaluator(
-    detail::ProductionTransitionEvaluationBackend& backend)
-    : binding_(std::make_shared<detail::BindingState>(
-          std::shared_ptr<detail::ProductionTransitionEvaluationBackend>(
-              &backend,
-              [](detail::ProductionTransitionEvaluationBackend*) noexcept {})))
-{
-}
-
-} // namespace AdaptiveMesh

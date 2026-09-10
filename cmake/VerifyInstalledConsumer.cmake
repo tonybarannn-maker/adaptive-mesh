@@ -1,0 +1,15 @@
+if(NOT DEFINED INSTALL_PREFIX)
+  message(FATAL_ERROR "INSTALL_PREFIX is required")
+endif()
+if(NOT EXISTS "${INSTALL_PREFIX}")
+  message(FATAL_ERROR "Install prefix does not exist")
+endif()
+if(EXISTS "${INSTALL_PREFIX}/include/internal/production_transition_evaluator_live_scenarios.hpp")
+  message(FATAL_ERROR "Scenario header escaped into install surface")
+endif()
+file(GLOB_RECURSE scenario_artifacts
+  "${INSTALL_PREFIX}/*scenario*"
+  "${INSTALL_PREFIX}/*test_access*")
+if(scenario_artifacts)
+  message(FATAL_ERROR "Test-only artifacts escaped into install: ${scenario_artifacts}")
+endif()

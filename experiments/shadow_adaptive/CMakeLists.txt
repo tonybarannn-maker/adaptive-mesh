@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.20)
 
 project(soam_k10_shadow_adaptive LANGUAGES CXX)
 
+find_package(AdaptiveMesh 2.0 CONFIG REQUIRED)
+
 enable_testing()
 
 add_library(
@@ -20,7 +22,12 @@ target_include_directories(
     k10_shadow_adaptive
     PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../include
+)
+
+target_link_libraries(
+    k10_shadow_adaptive
+    PUBLIC
+    AdaptiveMesh::adaptive_mesh_domain
 )
 
 add_executable(

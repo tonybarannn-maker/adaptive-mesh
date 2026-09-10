@@ -13,10 +13,10 @@
   
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21796944.svg)](https://doi.org/10.5281/zenodo.21796944)
 [![CI](https://github.com/tonybarannn-maker/adaptive-mesh/actions/workflows/ci.yml/badge.svg)](https://github.com/tonybarannn-maker/adaptive-mesh/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.0.0--development-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-AGPLv3-green.svg)](LICENSE)
 
-Header-only C++20 бібліотека та специфікація для побудови самоорганізованих, відмовостійких мереж. Модель поєднує дифузійні процеси на графах, трирівневу ієрархію стабілізації та кібернетичні рефлексивні контури управління.
+C++20 бібліотека та специфікація для побудови самоорганізованих, відмовостійких мереж. SOAM 2.0 розділяє installed header-defined domain surface (`AdaptiveMesh::adaptive_mesh_domain`) і compiled static production runtime (`AdaptiveMesh::adaptive_mesh`). Live K12 integration надається окремим target `AdaptiveMesh::adaptive_mesh_k12_live`.
 
 ## 📐 Architecture & Abstraction Layers
 

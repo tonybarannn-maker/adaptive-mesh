@@ -1,6 +1,6 @@
 /**
  * @file api_access.hpp
- * @brief Validated, non-breaking API helpers for SOAM node and bridge state.
+ * @brief Validated API helpers for compiled SOAM runtime node and bridge state.
  */
 
 #ifndef ADAPTIVE_MESH_API_ACCESS_HPP
@@ -13,6 +13,9 @@
 #include <stdexcept>
 
 namespace AdaptiveMesh::api {
+
+// These helpers operate on runtime-owned types. Consumers must link the
+// AdaptiveMesh::adaptive_mesh compiled target.
 
 struct NodeSnapshot {
     size_t id;

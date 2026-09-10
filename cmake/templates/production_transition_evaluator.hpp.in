@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <utility>
 
 namespace AdaptiveMesh {
 
@@ -11,10 +12,10 @@ class SpatialAdaptiveMesh;
 namespace detail {
 class ProductionTransitionEvaluationBackend;
 class ProductionTransitionEvaluatorBindingAccess;
-class ProductionTransitionEvaluatorLiveTestAccess;
 class ProductionTransitionEvaluationBinding;
 class EvaluationLease;
 class BindingState;
+@SOAM_SCENARIO_FORWARD_DECL@
 
 class ProductionTransitionEvaluationBindingHandle final {
 public:
@@ -37,6 +38,7 @@ private:
     friend class ProductionTransitionEvaluationBinding;
     friend class ProductionTransitionEvaluatorBindingAccess;
     friend class ::AdaptiveMesh::ProductionTransitionEvaluator;
+@SOAM_HANDLE_SCENARIO_FRIEND@
 };
 }
 
@@ -68,16 +70,24 @@ private:
         detail::ProductionTransitionEvaluationBindingHandle binding) noexcept
         : binding_(std::move(binding)) {}
 
-    // Compatibility seam for the pre-I2 synthetic contract tests only. It is
-    // private in supported production compilation.
-    explicit ProductionTransitionEvaluator(
-        detail::ProductionTransitionEvaluationBackend& backend);
-
     detail::ProductionTransitionEvaluationBindingHandle binding_;
 
     friend class detail::ProductionTransitionEvaluatorBindingAccess;
 };
 
-} // namespace AdaptiveMesh
+namespace detail {
 
-#include "detail/production_transition_evaluation_internal.hpp"
+class ProductionTransitionEvaluatorBindingAccess final {
+private:
+    [[nodiscard]] static ProductionTransitionEvaluator evaluator(
+        ProductionTransitionEvaluationBindingHandle binding) noexcept {
+        return ProductionTransitionEvaluator{std::move(binding)};
+    }
+
+    friend class ::AdaptiveMesh::SpatialAdaptiveMesh;
+@SOAM_BINDING_ACCESS_SCENARIO_FRIEND@
+};
+
+} // namespace detail
+
+} // namespace AdaptiveMesh
