@@ -9,6 +9,8 @@ All notable changes to this project will be documented in this file. The format 
 - Require runtime consumers to link `AdaptiveMesh::adaptive_mesh`.
 - Move live K12 implementation and production provenance behind compiled boundaries.
 - Replace consumer-local phase-profile macros with build-owned runtime configurations.
+- Classify the installed developer-preview API by stability and support level.
+- Limit package compatibility to the same `2.0.x` developer-preview line.
 
 ### Fixed
 - Make persistent-worker dispatch and completion depend on durable generation

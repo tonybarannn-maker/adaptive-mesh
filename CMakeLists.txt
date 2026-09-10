@@ -174,7 +174,7 @@ configure_package_config_file(cmake/AdaptiveMeshConfig.cmake.in
   "${CMAKE_CURRENT_BINARY_DIR}/AdaptiveMeshConfig.cmake"
   INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/AdaptiveMesh)
 write_basic_package_version_file("${CMAKE_CURRENT_BINARY_DIR}/AdaptiveMeshConfigVersion.cmake"
-  VERSION ${PROJECT_VERSION} COMPATIBILITY SameMajorVersion)
+  VERSION ${PROJECT_VERSION} COMPATIBILITY SameMinorVersion)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/AdaptiveMeshConfig.cmake"
   "${CMAKE_CURRENT_BINARY_DIR}/AdaptiveMeshConfigVersion.cmake"
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/AdaptiveMesh)

@@ -76,4 +76,9 @@ cmake --build build
 Detailed models are specified in `ARCHITECTURE.md` and `docs/assumptions_and_limitations.md`.
 
 ## Versioning
-Цей проєкт суворо дотримується [Semantic Versioning (SemVer) 2.0.0](https://semver.org/spec/v2.0.0.html). Будь-які зміни в публічному API, форматах матриці `MetaEvaluator` або глобальних константах безпеки призводитимуть до зміни мажорної або мінорної версії.
+Поточна гілка вихідного коду має ідентичність `2.0.0 development` і є
+developer-preview surface, а не опублікованим релізом `2.0.0`. Класифікація
+публічного API, сумісність і межі гарантій визначені в
+[`docs/public-api-stability.md`](docs/public-api-stability.md). Семантичне
+версіювання застосовується до опублікованих релізів; номер development package
+не є гарантією ABI-сумісності.
