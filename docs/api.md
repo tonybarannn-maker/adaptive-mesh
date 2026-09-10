@@ -41,3 +41,14 @@ may satisfy a request within the `2.0` developer-preview line when it is not
 older than the requested version; different minor or major lines are rejected.
 This package-selection rule does not establish ABI compatibility or publish a
 release.
+
+## Mutation, ownership and failures
+
+The [production mutation inventory](production-mutation-surface.md) defines
+ownership, synchronization, failure and observability contracts. Node and bridge
+helpers operate on caller-supplied objects; they do not access mesh-owned nodes.
+Topology insertion operations (`addNode`, `connectNodes`, `connectNodePairs`,
+`autoConnectNearbyNodes`) preserve logical mesh state on exception, including
+late geometry and allocation failures. Internal allocation capacity may change.
+Caller-owned public fields require validation and synchronization by the caller;
+helper locks do not automatically coordinate with direct field writes.

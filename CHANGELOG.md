@@ -13,6 +13,8 @@ All notable changes to this project will be documented in this file. The format 
 - Limit package compatibility to the same `2.0.x` developer-preview line.
 
 ### Fixed
+- Preserve logical topology and lifecycle state when node/connection preparation throws.
+- Document mutation ownership, synchronization and exception guarantees; add topology failure-path coverage.
 - Make persistent-worker dispatch and completion depend on durable generation
   predicates with bounded rechecks rather than notification delivery.
 
