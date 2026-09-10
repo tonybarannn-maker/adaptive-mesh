@@ -17,6 +17,11 @@ jobs:
         run: cmake --build build --parallel 2
       - name: Test
         run: ctest --test-dir build --output-on-failure
+      - name: Verify repository cleanliness
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"
 
   profile-runtime:
     runs-on: ubuntu-latest
@@ -30,9 +35,14 @@ jobs:
         run: ./build-profile/mesh_phase_profile 1 1
       - name: Normal/profile functional equivalence
         run: |
-          ./build-profile/mesh_benchmark 1 2 > normal.csv
-          ./build-profile/mesh_benchmark_profile 1 2 > profile.csv
-          diff <(tail -n +3 normal.csv | cut -d, -f5) <(tail -n +3 profile.csv | cut -d, -f5)
+          ./build-profile/mesh_benchmark 1 2 > build-profile/normal.csv
+          ./build-profile/mesh_benchmark_profile 1 2 > build-profile/profile.csv
+          diff <(tail -n +3 build-profile/normal.csv | cut -d, -f5) <(tail -n +3 build-profile/profile.csv | cut -d, -f5)
+      - name: Verify repository cleanliness
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"
 
   installed-consumer:
     runs-on: ubuntu-latest
@@ -52,6 +62,11 @@ jobs:
         run: |
           ./build-consumer/domain_consumer
           ./build-consumer/runtime_consumer
+      - name: Verify repository cleanliness
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"
 
   debug-sanitizers:
     runs-on: ubuntu-latest
@@ -63,6 +78,11 @@ jobs:
         run: cmake --build build-debug --parallel 2
       - name: Test
         run: ctest --test-dir build-debug --output-on-failure
+      - name: Verify repository cleanliness
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"
 
   thread-sanitizer:
     runs-on: ubuntu-latest
@@ -74,3 +94,8 @@ jobs:
         run: cmake --build build-tsan --parallel 2
       - name: Test
         run: ctest --test-dir build-tsan --output-on-failure
+      - name: Verify repository cleanliness
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"

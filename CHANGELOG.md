@@ -10,6 +10,10 @@ All notable changes to this project will be documented in this file. The format 
 - Move live K12 implementation and production provenance behind compiled boundaries.
 - Replace consumer-local phase-profile macros with build-owned runtime configurations.
 
+### Fixed
+- Make persistent-worker dispatch and completion depend on durable generation
+  predicates with bounded rechecks rather than notification delivery.
+
 This entry describes the source-tree development line and is not a release or publication record.
 
 ## [1.1.0] - 2026-08-02

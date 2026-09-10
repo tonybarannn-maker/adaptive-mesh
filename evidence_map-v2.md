@@ -31,6 +31,6 @@
 
 | Робочий пакет (Work Package) | Очікуваний артефакт (Deliverable) | Цільовий файл у репозиторії (Target File) | Статус валідації |
 | :--- | :--- | :--- | :--- |
-| **WP1: Performance & Scale** | **D1:** Оптимізоване ядро | `examples/asynchronous_demo.cpp` | 🟡 Прототип готовий |
+| **WP1: Performance & Scale** | **D1:** Відтворюваний benchmark harness | `benchmarks/mesh_benchmark.cpp` | ✅ Реалізовано |
 | **WP2: Formal Analysis** | **D3:** Документація інваріантів | `docs/mathematics.md` | ✅ Затверджено |
-| **WP3: Integrity & Resilience** | **D4:** Прототипи ізоляції | `tests/anomaly_isolation_test.cpp` | ✅ Проходять |
+| **WP3: Integrity & Resilience** | **D4:** Перевірки pruning та bounded simulation | `tests/mesh_tests.cpp` | ✅ Реалізовано |

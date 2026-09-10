@@ -6,10 +6,19 @@ Thank you for your interest in contributing to the Self-Organizing Adaptive Mesh
 Please be respectful, professional, and collaborative in all communications.
 
 ## Development Process
-1. Fork the repository and create your branch from `main` or `develop`.
+1. Fork the repository and create your branch from the explicitly authorized
+   baseline; use the current `main` branch unless the project specifies another
+   commit.
 2. Ensure C++20 standard compliance.
-3. Write clean, tested code and pass all CI checks.
-4. Fill in the AI-assisted contribution checklist if applicable.
+3. Configure an out-of-source build in a repository-supported build directory,
+   for example `build/` or `build-debug/`.
+4. Write clean, tested code and pass all CI checks.
+5. Before staging changes, run `git diff --check` and inspect
+   `git status --short --untracked-files=all`.
+6. Do not stage build trees, install trees, test results, binaries, caches, or
+   generated runtime output. After staging, review the complete staged path list
+   with `git diff --cached --name-status`.
+7. Fill in the AI-assisted contribution checklist if applicable.
 
 ## AI-Assisted Contributions
 

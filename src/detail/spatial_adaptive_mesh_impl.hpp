@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <exception>
@@ -17,10 +18,6 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
-#if SOAM_PHASE_PROFILE_ENABLED
-#include <chrono>
-#endif
-
 namespace AdaptiveMesh {
 
 struct SpatialAdaptiveMesh::Impl {
@@ -36,6 +33,14 @@ struct SpatialAdaptiveMesh::Impl {
                 return h1 ^ (h2 + static_cast<size_t>(0x9e3779b97f4a7c15ULL) + (h1 << 6) + (h1 >> 2));
             }
         };
+
+        struct WorkerSlot final {
+            size_t assignedGeneration = 0;
+            size_t completedGeneration = 0;
+        };
+
+        static constexpr std::chrono::milliseconds
+            coordinationRecheckInterval{1};
 
         struct FirstBridgeState {
             double capacity;
@@ -173,16 +178,15 @@ struct SpatialAdaptiveMesh::Impl {
         double alpha = 0.15;
         mutable std::shared_mutex topologyMutex;
         const size_t workerLimit;
+        std::vector<std::unique_ptr<WorkerSlot>> workerSlots;
         std::vector<std::jthread> workers;
         std::mutex workMutex;
         std::condition_variable workAvailable;
         std::condition_variable workCompleted;
-        std::condition_variable workerReady;
         size_t workGeneration = 0;
         size_t activeNodeCount = 0;
         size_t activeWorkerCount = 0;
-        size_t completedWorkerCount = 0;
-        size_t readyWorkerCount = 0;
+        size_t remainingWorkerCount = 0;
         std::vector<double>* dispatchedStates = nullptr;
         std::vector<std::vector<double>>* dispatchedBridgeCapacities = nullptr;
         std::vector<std::vector<BridgeStatus>>* dispatchedBridgeStatuses = nullptr;
@@ -381,17 +385,40 @@ struct SpatialAdaptiveMesh::Impl {
             }
         }
 
-        void workerLoop(size_t workerId) {
+        void acknowledgeWorkerCompletion(
+            size_t workerId,
+            WorkerSlot& slot,
+            size_t generation) noexcept
+        {
+            if (generation != workGeneration ||
+                workerId >= activeWorkerCount ||
+                generation != slot.assignedGeneration ||
+                slot.completedGeneration >= generation ||
+                remainingWorkerCount == 0) {
+                return;
+            }
+            slot.completedGeneration = generation;
+            --remainingWorkerCount;
+            if (remainingWorkerCount == 0) workCompleted.notify_one();
+        }
+
+        void workerLoop(size_t workerId, WorkerSlot& slot) {
             std::unique_lock lock(workMutex);
-            size_t observedGeneration = workGeneration;
-            ++readyWorkerCount;
-            workerReady.notify_one();
             while (true) {
-                workAvailable.wait(lock, [this, observedGeneration] {
-                    return stoppingWorkers || workGeneration != observedGeneration;
-                });
-                if (stoppingWorkers) return;
-                observedGeneration = workGeneration;
+                workAvailable.wait_for(
+                    lock,
+                    coordinationRecheckInterval,
+                    [this, &slot] {
+                        return stoppingWorkers ||
+                            slot.assignedGeneration >
+                                slot.completedGeneration;
+                    });
+                if (slot.assignedGeneration <= slot.completedGeneration) {
+                    if (stoppingWorkers) return;
+                    continue;
+                }
+
+                const size_t observedGeneration = slot.assignedGeneration;
                 const size_t workerCount = activeWorkerCount;
                 const size_t nodeCount = activeNodeCount;
                 auto* outputStates = dispatchedStates;
@@ -401,28 +428,40 @@ struct SpatialAdaptiveMesh::Impl {
                 const size_t firstNode = workerId * nodeCount / workerCount;
                 const size_t lastNode = (workerId + 1) * nodeCount / workerCount;
                 lock.unlock();
+                std::exception_ptr error;
                 try {
                     runNodeRange(firstNode, lastNode, *outputStates, *bridgeCapacities, *bridgeStatuses, *bridgeChanged);
                 } catch (...) {
-                    lock.lock();
-                    if (!workerException) workerException = std::current_exception();
-                    ++completedWorkerCount;
-                    if (completedWorkerCount == activeWorkerCount) workCompleted.notify_one();
-                    continue;
+                    error = std::current_exception();
                 }
                 lock.lock();
-                ++completedWorkerCount;
-                if (completedWorkerCount == activeWorkerCount) workCompleted.notify_one();
+                if (error && !workerException) workerException = error;
+                acknowledgeWorkerCompletion(
+                    workerId,
+                    slot,
+                    observedGeneration);
             }
         }
 
         void ensureWorkerPoolUnlocked() {
             const size_t requiredWorkerCount = resolveWorkerCountUnlocked();
+            workers.reserve(requiredWorkerCount);
+            workerSlots.reserve(requiredWorkerCount);
             for (size_t workerId = workers.size(); workerId < requiredWorkerCount; ++workerId) {
-                workers.emplace_back([this, workerId] { workerLoop(workerId); });
+                auto slot = std::make_unique<WorkerSlot>();
+                slot->assignedGeneration = workGeneration;
+                slot->completedGeneration = workGeneration;
+                WorkerSlot* const slotAddress = slot.get();
+                workerSlots.push_back(std::move(slot));
+                try {
+                    workers.emplace_back([this, workerId, slotAddress] {
+                        workerLoop(workerId, *slotAddress);
+                    });
+                } catch (...) {
+                    workerSlots.pop_back();
+                    throw;
+                }
             }
-            std::unique_lock workLock(workMutex);
-            workerReady.wait(workLock, [this] { return readyWorkerCount == workers.size(); });
         }
 
         void stopWorkerPool() noexcept {
@@ -432,6 +471,7 @@ struct SpatialAdaptiveMesh::Impl {
             }
             workAvailable.notify_all();
             workers.clear();
+            workerSlots.clear();
         }
 
         void validateTopologyUnlocked() const {
@@ -793,13 +833,19 @@ struct SpatialAdaptiveMesh::Impl {
                     std::lock_guard workLock(workMutex);
                     activeNodeCount = nodes.size();
                     activeWorkerCount = workers.size();
-                    completedWorkerCount = 0;
+                    remainingWorkerCount = activeWorkerCount;
                     workerException = nullptr;
                     dispatchedStates = &computedStates;
                     dispatchedBridgeCapacities = &pendingBridgeCapacities;
                     dispatchedBridgeStatuses = &pendingBridgeStatuses;
                     dispatchedBridgeChanged = &pendingBridgeChanged;
                     ++workGeneration;
+                    for (size_t workerId = 0;
+                         workerId < activeWorkerCount;
+                         ++workerId) {
+                        workerSlots[workerId]->assignedGeneration =
+                            workGeneration;
+                    }
                 }
                 workAvailable.notify_all();
                 {
@@ -807,9 +853,11 @@ struct SpatialAdaptiveMesh::Impl {
                     const auto waitStart = std::chrono::steady_clock::now();
 #endif
                     std::unique_lock workLock(workMutex);
-                    workCompleted.wait(workLock, [this] {
-                        return completedWorkerCount == activeWorkerCount;
-                    });
+                    while (remainingWorkerCount != 0) {
+                        workCompleted.wait_for(
+                            workLock,
+                            coordinationRecheckInterval);
+                    }
 #if SOAM_PHASE_PROFILE_ENABLED
                     const auto resultValidationStart = std::chrono::steady_clock::now();
                     profile.workerDispatchWaitMicroseconds =
