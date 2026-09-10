@@ -2,14 +2,15 @@
 ## Highlights
 
 ### Licensing
-- Added SOAM copyright attribution to GNU AGPLv3 license.
-- Confirmed AGPLv3 open-source licensing model.
-- Added commercial licensing contact information.
+- Repository contents are distributed under the GNU Affero General Public
+  License v3 as specified in [`LICENSE`](LICENSE).
+- Separate commercial licensing terms are not granted by this repository.
+  Inquiries may be sent to the copyright holder using the contact address in
+  `LICENSE`.
 
 ### Verification
-- GPG signed release tag.
-- Verified author signature:
-  Mykola Bezruchko <tonybarannn@gmail.com>
+- Release and tag signatures must be verified against the exact Git object;
+  source-tree documentation does not treat an unverified signature as evidence.
   
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21796944.svg)](https://doi.org/10.5281/zenodo.21796944)
 [![CI](https://github.com/tonybarannn-maker/adaptive-mesh/actions/workflows/ci.yml/badge.svg)](https://github.com/tonybarannn-maker/adaptive-mesh/actions/workflows/ci.yml)
