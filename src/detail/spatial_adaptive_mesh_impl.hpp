@@ -14,6 +14,7 @@
 #include <numeric>
 #include <shared_mutex>
 #include <thread>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -224,37 +225,66 @@ struct SpatialAdaptiveMesh::Impl {
             }
         }
 
-        void connectNodesUnlocked(int nodeA, int nodeB, bool enforceStability = true) {
-            double dist = nodes[nodeA].position.distanceTo(nodes[nodeB].position);
-            double orientA = nodes[nodeA].position.orientationFactorTo(nodes[nodeB].position);
-            double orientB = nodes[nodeB].position.orientationFactorTo(nodes[nodeA].position);
-            nodes[nodeA].bridges.reserve(nodes[nodeA].bridges.size() + 1);
-            nodes[nodeB].bridges.reserve(nodes[nodeB].bridges.size() + 1);
-            nodes[nodeA].bridges.push_back({nodeB, dist, orientA, 1.0, BridgeStatus::NORMAL});
-            nodes[nodeB].bridges.push_back({nodeA, dist, orientB, 1.0, BridgeStatus::NORMAL});
-            establishProductionRelationshipUnlocked(
-                static_cast<std::size_t>(nodeA),
-                static_cast<std::size_t>(nodeB));
-            establishProductionRelationshipUnlocked(
-                static_cast<std::size_t>(nodeB),
-                static_cast<std::size_t>(nodeA));
-            if (enforceStability) {
-                enforceStabilityConditionUnlocked();
+        // Caller holds topologyMutex exclusively throughout preparation/publication.
+        // Provisional map entries are rolled back on failure and cannot be observed.
+        void connectPairsUnlocked(const std::vector<std::pair<int, int>>& pairs) {
+            struct PendingEdge {
+                EdgeKey key;
+                SpatialBridge bridge;
+                ProductionRelationshipLifecycle lifecycle;
+            };
+            std::vector<PendingEdge> pending;
+            std::unordered_map<size_t, size_t> additions;
+            auto generation = nextRelationshipGeneration_;
+            auto lineage = nextAuthorityRelevantContextLineage_;
+            for (const auto& [a, b] : pairs) {
+                const auto source = static_cast<size_t>(a);
+                const auto target = static_cast<size_t>(b);
+                const double distance = nodes[source].position.distanceTo(nodes[target].position);
+                const double forward = nodes[source].position.orientationFactorTo(nodes[target].position);
+                const double reverse = nodes[target].position.orientationFactorTo(nodes[source].position);
+                pending.push_back({{source, target}, {b, distance, forward, 1.0, BridgeStatus::NORMAL},
+                    {nodeIncarnations_.at(source), nodeIncarnations_.at(target),
+                     generation++, lineage++, detail::ProductionPersistenceRecord{}}});
+                pending.push_back({{target, source}, {a, distance, reverse, 1.0, BridgeStatus::NORMAL},
+                    {nodeIncarnations_.at(target), nodeIncarnations_.at(source),
+                     generation++, lineage++, detail::ProductionPersistenceRecord{}}});
+                ++additions[source];
+                ++additions[target];
             }
-        }
-
-        void establishProductionRelationshipUnlocked(
-            std::size_t sourceNodeId,
-            std::size_t targetNodeId) {
-            productionRelationships_.try_emplace(
-                EdgeKey{sourceNodeId, targetNodeId},
-                ProductionRelationshipLifecycle{
-                    nodeIncarnations_.at(sourceNodeId),
-                    nodeIncarnations_.at(targetNodeId),
-                    nextRelationshipGeneration_++,
-                    nextAuthorityRelevantContextLineage_++,
-                    detail::ProductionPersistenceRecord{}
-                });
+            // Reserve geometrically: repeated single-edge calls retain amortized growth.
+            for (const auto& [id, count] : additions) {
+                auto& bridges = nodes[id].bridges;
+                const auto required = bridges.size() + count;
+                if (required > bridges.capacity()) {
+                    bridges.reserve(std::max(required, bridges.capacity() * 2));
+                }
+            }
+            std::vector<EdgeKey> inserted;
+            inserted.reserve(pending.size());
+            try {
+                for (auto& edge : pending) {
+                    const auto result = productionRelationships_.try_emplace(
+                        edge.key, std::move(edge.lifecycle));
+                    if (!result.second) {
+                        throw std::logic_error("relationship already exists during connection preparation");
+                    }
+                    inserted.push_back(edge.key); // reserved, trivial value
+                }
+            } catch (...) {
+                for (const auto& key : inserted) productionRelationships_.erase(key);
+                throw;
+            }
+            // Publication: capacity is sufficient; SpatialBridge is a trivial value.
+            static_assert(std::is_nothrow_copy_constructible_v<SpatialBridge>);
+            for (const auto& edge : pending) nodes[edge.key.first].bridges.push_back(edge.bridge);
+            nextRelationshipGeneration_ = generation;
+            nextAuthorityRelevantContextLineage_ = lineage;
+            if (!pairs.empty()) {
+                enforceStabilityConditionUnlocked();
+                simulationBufferShapeDirty = true;
+                topologyValidationRequired = true;
+            }
         }
 
         [[nodiscard]] const ProductionRelationshipLifecycle*
@@ -586,8 +616,13 @@ struct SpatialAdaptiveMesh::Impl {
             if (id != nodes.size()) {
                 throw std::invalid_argument("node ID must match insertion index");
             }
+            if (nodeIncarnations_.size() == nodeIncarnations_.capacity()) {
+                nodeIncarnations_.reserve(std::max(size_t{1}, nodeIncarnations_.capacity() * 2));
+            }
+            // vector insertion has the strong guarantee for this copyable node type.
             nodes.emplace_back(id, pos, baseline);
-            nodeIncarnations_.push_back(nextNodeIncarnation_++);
+            nodeIncarnations_.push_back(nextNodeIncarnation_);
+            ++nextNodeIncarnation_;
             simulationBufferShapeDirty = true;
             topologyValidationRequired = true;
         }
@@ -606,7 +641,7 @@ struct SpatialAdaptiveMesh::Impl {
             if (alreadyConnected) {
                 throw std::invalid_argument("bridge pair already exists");
             }
-            connectNodesUnlocked(nodeA, nodeB);
+            connectPairsUnlocked({{nodeA, nodeB}});
             simulationBufferShapeDirty = true;
             topologyValidationRequired = true;
         }
@@ -644,14 +679,7 @@ struct SpatialAdaptiveMesh::Impl {
                 }
             }
 
-            for (const auto& [nodeA, nodeB] : connections) {
-                connectNodesUnlocked(nodeA, nodeB, false);
-            }
-            if (!connections.empty()) {
-                enforceStabilityConditionUnlocked();
-                simulationBufferShapeDirty = true;
-                topologyValidationRequired = true;
-            }
+            connectPairsUnlocked(connections);
         }
 
         void enforceStabilityCondition() noexcept {
@@ -737,7 +765,7 @@ struct SpatialAdaptiveMesh::Impl {
             requireFinite(radius, "radius");
             if (radius < 0.0) throw std::invalid_argument("radius must not be negative");
             std::unique_lock lock(topologyMutex);
-            bool topologyShapeChanged = false;
+            std::vector<std::pair<int, int>> connections;
             std::unordered_set<EdgeKey, EdgeKeyHash> directedEdges;
             size_t edgeCount = 0;
             for (const auto& node : nodes) edgeCount += node.bridges.size();
@@ -754,18 +782,15 @@ struct SpatialAdaptiveMesh::Impl {
                     if (nodes[i].position.distanceTo(nodes[j].position) <= radius) {
                         const EdgeKey forwardKey{i, j};
                         if (!directedEdges.contains(forwardKey)) {
-                            connectNodesUnlocked(static_cast<int>(i), static_cast<int>(j), false);
-                            topologyShapeChanged = true;
+                            connections.emplace_back(static_cast<int>(i), static_cast<int>(j));
                             directedEdges.insert(forwardKey);
                             directedEdges.insert(EdgeKey{j, i});
                         }
                     }
                 }
             }
+            connectPairsUnlocked(connections);
             enforceStabilityConditionUnlocked();
-            if (topologyShapeChanged) {
-                simulationBufferShapeDirty = true;
-            }
             topologyValidationRequired = true;
         }
 
