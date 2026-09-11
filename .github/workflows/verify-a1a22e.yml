@@ -52,7 +52,7 @@ jobs:
           }
           print(checks)
           assert checks['committedBridgeStatus'] == 0
-          assert checks['mesh.impl_'] == 19
+          assert checks['mesh.impl_'] == 20
           assert checks['issueCapability definition'] == 1
           assert checks['issueSameIdentityPair'] == 2
           assert checks['advanceAuthorityVersion'] >= 1
