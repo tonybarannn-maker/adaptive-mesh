@@ -25,6 +25,7 @@ namespace AdaptiveMesh {
 struct SpatialAdaptiveMesh::Impl {
     private:
         friend class detail::ProductionTransitionEvaluatorScenarioAccess;
+        friend class detail::SpatialAdaptiveMeshInternalAccess;
 
         using EdgeKey = std::pair<size_t, size_t>;
 
@@ -113,9 +114,6 @@ struct SpatialAdaptiveMesh::Impl {
                         snapshot.lineage()) {
                     return requestDerivationFailed();
                 }
-                // D7 production observation/confidence provenance is not
-                // available in this authorized slice, so no production-native
-                // request direction may be derived yet.
                 return requestDerivationFailed();
             }
 
@@ -227,8 +225,6 @@ struct SpatialAdaptiveMesh::Impl {
             }
         }
 
-        // Caller holds topologyMutex exclusively throughout preparation/publication.
-        // Provisional map entries are rolled back on failure and cannot be observed.
         void connectPairsUnlocked(const std::vector<std::pair<int, int>>& pairs) {
             struct PendingEdge {
                 EdgeKey key;
@@ -254,7 +250,6 @@ struct SpatialAdaptiveMesh::Impl {
                 ++additions[source];
                 ++additions[target];
             }
-            // Reserve geometrically: repeated single-edge calls retain amortized growth.
             for (const auto& [id, count] : additions) {
                 auto& bridges = nodes[id].bridges;
                 const auto required = bridges.size() + count;
@@ -271,13 +266,12 @@ struct SpatialAdaptiveMesh::Impl {
                     if (!result.second) {
                         throw std::logic_error("relationship already exists during connection preparation");
                     }
-                    inserted.push_back(edge.key); // reserved, trivial value
+                    inserted.push_back(edge.key);
                 }
             } catch (...) {
                 for (const auto& key : inserted) productionRelationships_.erase(key);
                 throw;
             }
-            // Publication: capacity is sufficient; SpatialBridge is a trivial value.
             static_assert(std::is_nothrow_copy_constructible_v<SpatialBridge>);
             for (const auto& edge : pending) nodes[edge.key.first].bridges.push_back(edge.bridge);
             nextRelationshipGeneration_ = generation;
@@ -623,7 +617,6 @@ struct SpatialAdaptiveMesh::Impl {
             if (nodeIncarnations_.size() == nodeIncarnations_.capacity()) {
                 nodeIncarnations_.reserve(std::max(size_t{1}, nodeIncarnations_.capacity() * 2));
             }
-            // vector insertion has the strong guarantee for this copyable node type.
             nodes.emplace_back(id, pos, baseline);
             nodeIncarnations_.push_back(nextNodeIncarnation_);
             ++nextNodeIncarnation_;
@@ -650,10 +643,6 @@ struct SpatialAdaptiveMesh::Impl {
             topologyValidationRequired = true;
         }
 
-        /**
-         * Connects a batch of node pairs and recomputes stability once at the end.
-         * All pairs are validated before the first topology mutation.
-         */
         void connectNodePairs(const std::vector<std::pair<int, int>>& connections) {
             std::unique_lock lock(topologyMutex);
             std::unordered_set<EdgeKey, EdgeKeyHash> batchPairs;
@@ -692,7 +681,6 @@ struct SpatialAdaptiveMesh::Impl {
             topologyValidationRequired = true;
         }
 
-        /** Removes both directions of a bridge pair when either direction is isolated. */
         void pruneIsolatedBridges(double minCapacityThreshold = 0.05) {
             requireFinite(minCapacityThreshold, "minCapacityThreshold");
             if (minCapacityThreshold < 0.0) {
@@ -1047,9 +1035,6 @@ struct SpatialAdaptiveMesh::Impl {
                 return Result::stale_state;
             }
 
-            // All live binding, generation, version, class, and bridge checks above
-            // are performed while topologyMutex is held exclusively. This is the
-            // commit-time freshness/revalidation boundary for this transition class.
             SpatialBridge prepared = *bridgeIt;
             switch (capabilityBinding.direction()) {
             case RequestedTransitionDirection::constrain:
@@ -1080,8 +1065,6 @@ struct SpatialAdaptiveMesh::Impl {
                 return Result::capability_invalid;
             }
 
-            // Nothing below this point may throw. The mesh lock and ledger record
-            // lock remain held through publication, consumption, and version advance.
             static_assert(std::is_nothrow_copy_assignable_v<SpatialBridge>);
             *bridgeIt = prepared;
             ledgerRecord.setState(Lifecycle::consumed);
