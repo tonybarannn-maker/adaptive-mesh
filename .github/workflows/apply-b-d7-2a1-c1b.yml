@@ -1,0 +1,148 @@
+name: apply-b-d7-2a1-c1b
+
+on:
+  push:
+    branches:
+      - automation/apply-b-d7-2a1-c1b
+
+permissions:
+  contents: write
+
+jobs:
+  apply-build-push:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout implementation branch
+        uses: actions/checkout@v4
+        with:
+          ref: implementation/wave-b-d7-2a-1-publication-transaction
+          fetch-depth: 0
+
+      - name: Assert exact base
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "972445f7f7651c71ea23fc893998792c68b7be51"
+          test -z "$(git status --porcelain)"
+
+      - name: Apply transaction primitives
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          internal = Path('src/detail/production_transition_evaluation_internal.hpp')
+          text = internal.read_text()
+
+          def replace_once(source, old, new):
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected one match, got {count}: {old[:80]!r}')
+              return source.replace(old, new, 1)
+
+          text = replace_once(text, '#include <optional>\n', '#include <optional>\n#include <type_traits>\n')
+          text = replace_once(
+              text,
+              'class ProductionPersistenceRecord;\nclass ProductionTransitionEvaluatorScenarioAccess;\n',
+              'class ProductionPersistenceRecord;\nclass ProductionD7PublicationTransactionAccess;\nclass ProductionTransitionEvaluatorScenarioAccess;\n')
+
+          text = replace_once(
+              text,
+              '''private:\n    ProductionD7PublicationStatus status_ =\n        ProductionD7PublicationStatus::unpublished;\n    ProductionD7PublicationLineage lineage_;\n};\n\nclass CapturedRelationshipIdentity final {''',
+              '''private:\n    void publishDetached(ProductionD7PublicationStatus status) {\n        status_ = status;\n        lineage_.advance();\n    }\n\n    ProductionD7PublicationStatus status_ =\n        ProductionD7PublicationStatus::unpublished;\n    ProductionD7PublicationLineage lineage_;\n\n    friend class ProductionD7PublicationTransactionAccess;\n};\n\nclass CapturedRelationshipIdentity final {''')
+
+          marker = '''    friend class ProductionTransitionEvaluationBackend;\n};\n\nclass CapturedProductionStateVersion final {'''
+          insertion = '''    friend class ProductionTransitionEvaluationBackend;\n};\n\nenum class ProductionD7PublicationCommitStatus : std::uint8_t {\n    committed = 0,\n    stale_acquisition = 1\n};\n\nclass ProductionD7PublicationInput final {\npublic:\n    [[nodiscard]] static ProductionD7PublicationInput authoritative(\n        BridgePolicyEvidence evidence) noexcept {\n        return ProductionD7PublicationInput{\n            std::optional<BridgePolicyEvidence>{evidence}};\n    }\n\n    [[nodiscard]] static ProductionD7PublicationInput unavailable() noexcept {\n        return ProductionD7PublicationInput{std::nullopt};\n    }\n\n    [[nodiscard]] const BridgePolicyEvidence* authoritativeEvidence()\n        const noexcept {\n        return evidence_ ? &*evidence_ : nullptr;\n    }\n\nprivate:\n    explicit ProductionD7PublicationInput(\n        std::optional<BridgePolicyEvidence> evidence) noexcept\n        : evidence_(std::move(evidence))\n    {\n    }\n\n    std::optional<BridgePolicyEvidence> evidence_;\n};\n\nstatic_assert(\n    std::is_nothrow_move_constructible_v<ProductionD7PublicationInput>);\n\nclass ProductionD7PublicationCasState final {\npublic:\n    ProductionD7PublicationCasState(\n        CapturedRelationshipIdentity identity,\n        std::uint64_t contextLineage,\n        ProductionD7PublicationLineage d7Lineage,\n        ProductionPersistenceLineage persistenceLineage) noexcept\n        : identity_(std::move(identity)),\n          contextLineage_(contextLineage),\n          d7Lineage_(std::move(d7Lineage)),\n          persistenceLineage_(std::move(persistenceLineage))\n    {\n    }\n\n    [[nodiscard]] const CapturedRelationshipIdentity& identity()\n        const noexcept {\n        return identity_;\n    }\n\n    [[nodiscard]] std::uint64_t contextLineage() const noexcept {\n        return contextLineage_;\n    }\n\n    [[nodiscard]] const ProductionD7PublicationLineage& d7Lineage()\n        const noexcept {\n        return d7Lineage_;\n    }\n\n    [[nodiscard]] const ProductionPersistenceLineage& persistenceLineage()\n        const noexcept {\n        return persistenceLineage_;\n    }\n\nprivate:\n    CapturedRelationshipIdentity identity_;\n    std::uint64_t contextLineage_;\n    ProductionD7PublicationLineage d7Lineage_;\n    ProductionPersistenceLineage persistenceLineage_;\n};\n\n[[nodiscard]] inline bool publicationCasMatches(\n    const ProductionD7PublicationCasState& expected,\n    const ProductionD7PublicationCasState& current) noexcept {\n    const auto& expectedIdentity = expected.identity();\n    const auto& currentIdentity = current.identity();\n    return\n        expectedIdentity.sourceNodeId() == currentIdentity.sourceNodeId() &&\n        expectedIdentity.targetNodeId() == currentIdentity.targetNodeId() &&\n        expectedIdentity.generation() == currentIdentity.generation() &&\n        expectedIdentity.sourceNodeIncarnation() == currentIdentity.sourceNodeIncarnation() &&\n        expectedIdentity.targetNodeIncarnation() == currentIdentity.targetNodeIncarnation() &&\n        expected.contextLineage() == current.contextLineage() &&\n        expected.d7Lineage() == current.d7Lineage() &&\n        expected.persistenceLineage() == current.persistenceLineage();\n}\n\nclass CapturedProductionStateVersion final {'''
+          text = replace_once(text, marker, insertion)
+
+          text = replace_once(
+              text,
+              '''    [[nodiscard]] static bool reset(BridgePersistence& persistence) noexcept {\n        const auto before = persistence.completeState();\n        persistence.reset();\n        return persistence.completeState() != before;\n    }\n\n    [[nodiscard]] static ProductionPersistenceEvolutionResult evolve(''',
+              '''    [[nodiscard]] static bool reset(BridgePersistence& persistence) noexcept {\n        const auto before = persistence.completeState();\n        persistence.reset();\n        return persistence.completeState() != before;\n    }\n\n    [[nodiscard]] static bool interruptPending(\n        BridgePersistence& persistence) noexcept {\n        const auto before = persistence.completeState();\n        persistence.clearPending();\n        return persistence.completeState() != before;\n    }\n\n    [[nodiscard]] static ProductionPersistenceEvolutionResult evolve(''')
+
+          text = replace_once(
+              text,
+              '''    [[nodiscard]] static ProductionPersistenceLineage lineage(\n        const ProductionPersistenceRecord& record) noexcept {''',
+              '''    [[nodiscard]] static bool interruptPending(\n        ProductionPersistenceRecord& record) {\n        const bool changed = interruptPending(record.persistence_);\n        if (changed) record.lineage_.advance();\n        return changed;\n    }\n\n    [[nodiscard]] static ProductionPersistenceLineage lineage(\n        const ProductionPersistenceRecord& record) noexcept {''')
+
+          text = replace_once(
+              text,
+              '''    friend class ProductionTransitionEvaluatorScenarioAccess;\n    friend class ::AdaptiveMesh::SpatialAdaptiveMesh;\n};\n\ninline RequestDerivationResult''',
+              '''    friend class ProductionTransitionEvaluatorScenarioAccess;\n    friend class ::AdaptiveMesh::SpatialAdaptiveMesh;\n};\n\nclass ProductionD7PublicationTransactionAccess final {\npublic:\n    static void publishDetached(\n        ProductionD7PublicationRecord& record,\n        ProductionD7PublicationStatus status) {\n        record.publishDetached(status);\n    }\n};\n\ninline RequestDerivationResult''')
+
+          internal.write_text(text)
+
+          impl = Path('src/detail/spatial_adaptive_mesh_impl.hpp')
+          text = impl.read_text()
+
+          lifecycle = '''        struct ProductionRelationshipLifecycle final {\n            std::uint64_t sourceNodeIncarnation;\n            std::uint64_t targetNodeIncarnation;\n            std::uint64_t relationshipGeneration;\n            std::uint64_t authorityRelevantContextLineage;\n            detail::ProductionPersistenceRecord persistence;\n            detail::ProductionD7PublicationRecord d7Publication;\n        };\n'''
+          lifecycle_new = lifecycle + '''\n        struct D7PublicationCandidate final {\n            detail::ProductionPersistenceRecord persistence;\n            detail::ProductionD7PublicationRecord d7Publication;\n        };\n\n        class PreparedD7PublicationTransaction final {\n        public:\n            PreparedD7PublicationTransaction(\n                detail::ProductionD7PublicationCasState preconditions,\n                detail::ProductionPersistenceRecord persistence,\n                detail::ProductionD7PublicationRecord d7Publication) noexcept\n                : preconditions_(std::move(preconditions)),\n                  candidate_{std::move(persistence), std::move(d7Publication)}\n            {\n            }\n\n            PreparedD7PublicationTransaction(PreparedD7PublicationTransaction&&) noexcept = default;\n            PreparedD7PublicationTransaction(const PreparedD7PublicationTransaction&) = delete;\n            PreparedD7PublicationTransaction& operator=(const PreparedD7PublicationTransaction&) = delete;\n            PreparedD7PublicationTransaction& operator=(PreparedD7PublicationTransaction&&) = delete;\n\n            [[nodiscard]] const detail::ProductionD7PublicationCasState&\n            preconditions() const noexcept {\n                return preconditions_;\n            }\n\n            void prepare(const detail::ProductionD7PublicationInput& input) {\n                if (const auto* evidence = input.authoritativeEvidence()) {\n                    static_cast<void>(detail::ProductionPersistenceAccess::evolve(\n                        candidate_.persistence, *evidence));\n                    detail::ProductionD7PublicationTransactionAccess::publishDetached(\n                        candidate_.d7Publication,\n                        detail::ProductionD7PublicationStatus::authoritative);\n                    return;\n                }\n\n                static_cast<void>(detail::ProductionPersistenceAccess::interruptPending(\n                    candidate_.persistence));\n                detail::ProductionD7PublicationTransactionAccess::publishDetached(\n                    candidate_.d7Publication,\n                    detail::ProductionD7PublicationStatus::unavailable);\n            }\n\n            void installInto(ProductionRelationshipLifecycle& lifecycle) && noexcept {\n                static_assert(std::is_nothrow_move_assignable_v<detail::ProductionPersistenceRecord>);\n                static_assert(std::is_nothrow_move_assignable_v<detail::ProductionD7PublicationRecord>);\n                lifecycle.persistence = std::move(candidate_.persistence);\n                lifecycle.d7Publication = std::move(candidate_.d7Publication);\n            }\n\n        private:\n            detail::ProductionD7PublicationCasState preconditions_;\n            D7PublicationCandidate candidate_;\n        };\n'''
+          text = replace_once(text, lifecycle, lifecycle_new)
+
+          old_find = '''        [[nodiscard]] const ProductionRelationshipLifecycle*\n        findLifecycleUnlocked(\n            const detail::CapturedRelationshipIdentity& relationship) const {\n            const auto found = productionRelationships_.find(\n                EdgeKey{\n                    relationship.sourceNodeId(),\n                    relationship.targetNodeId()});\n            if (found == productionRelationships_.end()) return nullptr;\n            const auto& current = found->second;\n            if (current.relationshipGeneration != relationship.generation() ||\n                current.sourceNodeIncarnation !=\n                    relationship.sourceNodeIncarnation() ||\n                current.targetNodeIncarnation !=\n                    relationship.targetNodeIncarnation()) {\n                return nullptr;\n            }\n            return &current;\n        }\n'''
+          new_find = '''        [[nodiscard]] static bool matchesLifecycleIdentity(\n            const ProductionRelationshipLifecycle& lifecycle,\n            const detail::CapturedRelationshipIdentity& relationship) noexcept {\n            return\n                lifecycle.relationshipGeneration == relationship.generation() &&\n                lifecycle.sourceNodeIncarnation == relationship.sourceNodeIncarnation() &&\n                lifecycle.targetNodeIncarnation == relationship.targetNodeIncarnation();\n        }\n\n        [[nodiscard]] const ProductionRelationshipLifecycle*\n        findLifecycleUnlocked(\n            const detail::CapturedRelationshipIdentity& relationship) const {\n            const auto found = productionRelationships_.find(\n                EdgeKey{relationship.sourceNodeId(), relationship.targetNodeId()});\n            if (found == productionRelationships_.end() ||\n                !matchesLifecycleIdentity(found->second, relationship)) {\n                return nullptr;\n            }\n            return &found->second;\n        }\n\n        [[nodiscard]] ProductionRelationshipLifecycle*\n        findLifecycleUnlocked(\n            const detail::CapturedRelationshipIdentity& relationship) {\n            const auto found = productionRelationships_.find(\n                EdgeKey{relationship.sourceNodeId(), relationship.targetNodeId()});\n            if (found == productionRelationships_.end() ||\n                !matchesLifecycleIdentity(found->second, relationship)) {\n                return nullptr;\n            }\n            return &found->second;\n        }\n\n        [[nodiscard]] static detail::ProductionD7PublicationCasState publicationCasState(\n            const detail::CapturedRelationshipIdentity& relationship,\n            const ProductionRelationshipLifecycle& lifecycle) noexcept {\n            return {\n                relationship,\n                lifecycle.authorityRelevantContextLineage,\n                lifecycle.d7Publication.lineage(),\n                detail::ProductionPersistenceAccess::lineage(lifecycle.persistence)};\n        }\n\n        [[nodiscard]] std::optional<PreparedD7PublicationTransaction>\n        prepareD7Publication(\n            const ProductionTransitionEvaluationLocator& locator,\n            const detail::ProductionD7PublicationInput& input) {\n            LiveProductionTransitionEvaluationBackend backend{*this};\n            const auto resolution = backend.resolveCurrentRelationship(locator);\n            const auto& relationship = resolution.relationship();\n            if (!relationship) return std::nullopt;\n\n            auto transaction = [&]() -> std::optional<PreparedD7PublicationTransaction> {\n                std::shared_lock lock(topologyMutex);\n                const auto* current = findLifecycleUnlocked(*relationship);\n                if (current == nullptr) return std::nullopt;\n                return PreparedD7PublicationTransaction{\n                    publicationCasState(*relationship, *current),\n                    current->persistence,\n                    current->d7Publication};\n            }();\n\n            if (!transaction) return std::nullopt;\n            transaction->prepare(input);\n            return transaction;\n        }\n\n        [[nodiscard]] detail::ProductionD7PublicationCommitStatus\n        commitD7Publication(PreparedD7PublicationTransaction&& transaction) {\n            std::unique_lock lock(topologyMutex);\n            const auto& expected = transaction.preconditions();\n            auto* current = findLifecycleUnlocked(expected.identity());\n            if (current == nullptr) {\n                return detail::ProductionD7PublicationCommitStatus::stale_acquisition;\n            }\n\n            const auto currentState = publicationCasState(expected.identity(), *current);\n            if (!detail::publicationCasMatches(expected, currentState)) {\n                return detail::ProductionD7PublicationCommitStatus::stale_acquisition;\n            }\n\n            std::move(transaction).installInto(*current);\n            return detail::ProductionD7PublicationCommitStatus::committed;\n        }\n'''
+          text = replace_once(text, old_find, new_find)
+          impl.write_text(text)
+          PY
+
+      - name: Assert patch perimeter
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git status --short | wc -l)" -eq 2
+          git diff --exit-code 972445f7f7651c71ea23fc893998792c68b7be51 -- include cmake/templates CMakeLists.txt
+
+      - name: Configure
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTS=ON \
+            -DBUILD_BENCHMARKS=ON \
+            -DBUILD_EXAMPLES=ON \
+            -DSOAM_WARNINGS_AS_ERRORS=ON
+
+      - name: Registered tests and frozen proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          ctest --test-dir build -N | tee /tmp/ctest-list.txt
+          grep -F 'Total Tests: 28' /tmp/ctest-list.txt
+          ctest --test-dir build -R '^proof_token_delta_v0$' --output-on-failure
+
+      - name: Build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build build --parallel 2
+
+      - name: Full current suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          ctest --test-dir build --output-on-failure
+
+      - name: Structural gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(grep -o 'mesh\.impl_' tests/support/production_transition_evaluator_live_scenarios.cpp | wc -l)" -eq 15
+          test "$(git diff --name-only 972445f7f7651c71ea23fc893998792c68b7be51 -- | wc -l)" -eq 2
+          if grep -E 'evolve\([^\n]*lifecycle[^\n]*persistence|interruptPending\([^\n]*lifecycle[^\n]*persistence' src/detail/spatial_adaptive_mesh_impl.hpp; then
+            echo 'live persistence mutation detected' >&2
+            exit 1
+          fi
+
+      - name: Commit and push implementation
+        shell: bash
+        env:
+          TARGET_BRANCH: implementation/wave-b-d7-2a-1-publication-transaction
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/detail/production_transition_evaluation_internal.hpp src/detail/spatial_adaptive_mesh_impl.hpp
+          git commit -m 'feat: add exception-safe D7 publication transaction primitives'
+          git push origin "HEAD:${TARGET_BRANCH}"
