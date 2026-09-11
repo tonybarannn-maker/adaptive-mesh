@@ -211,6 +211,50 @@ struct ProductionAuthorityLedgerRecord final {
 
 class ProductionAuthorityLedger final {
 public:
+    class LockedRecord final {
+    public:
+        LockedRecord(const LockedRecord&) = delete;
+        LockedRecord& operator=(const LockedRecord&) = delete;
+        LockedRecord(LockedRecord&&) noexcept = default;
+        LockedRecord& operator=(LockedRecord&&) noexcept = default;
+
+        [[nodiscard]] bool found() const noexcept { return record_ != nullptr; }
+
+        [[nodiscard]] ProductionCapabilityLifecycleState state() const noexcept
+        {
+            return record_->state;
+        }
+
+        [[nodiscard]] const ProductionTransitionRequestBinding& binding()
+            const noexcept
+        {
+            return record_->binding;
+        }
+
+        [[nodiscard]] std::uint64_t issuanceEpoch() const noexcept
+        {
+            return record_->issuanceEpoch;
+        }
+
+        void setState(ProductionCapabilityLifecycleState state) noexcept
+        {
+            record_->state = state;
+        }
+
+    private:
+        LockedRecord(
+            std::unique_lock<std::mutex> lock,
+            ProductionAuthorityLedgerRecord* record) noexcept
+            : lock_(std::move(lock)), record_(record)
+        {
+        }
+
+        std::unique_lock<std::mutex> lock_;
+        ProductionAuthorityLedgerRecord* record_ = nullptr;
+
+        friend class ProductionAuthorityLedger;
+    };
+
     explicit ProductionAuthorityLedger(AuthorityDomainIdentity domain) noexcept
         : domain_(domain)
     {
@@ -246,6 +290,16 @@ public:
             throw std::logic_error(
                 "production capability identity already registered");
         }
+    }
+
+    [[nodiscard]] LockedRecord lockRecord(CapabilityId id)
+    {
+        std::unique_lock lock(mutex_);
+        const auto found = records_.find(
+            ProductionTransitionCommitAccess::idValue(id));
+        return LockedRecord{
+            std::move(lock),
+            found == records_.end() ? nullptr : &found->second};
     }
 
     [[nodiscard]] std::optional<ProductionCapabilityLifecycleState>
