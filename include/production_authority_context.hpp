@@ -26,12 +26,18 @@ private:
         AuthorityDomainIdentity domain,
         ProductionTransitionRequestBinding binding,
         std::uint64_t authoritativeEpoch,
+        bool liveBindingCurrent,
+        bool stateCurrent,
+        bool transitionClassCurrent,
         bool freshnessSatisfied,
         bool revalidationSatisfied,
         bool authorityPolicySatisfied) noexcept
         : domain_(domain),
           binding_(binding),
           authoritativeEpoch_(authoritativeEpoch),
+          liveBindingCurrent_(liveBindingCurrent),
+          stateCurrent_(stateCurrent),
+          transitionClassCurrent_(transitionClassCurrent),
           freshnessSatisfied_(freshnessSatisfied),
           revalidationSatisfied_(revalidationSatisfied),
           authorityPolicySatisfied_(authorityPolicySatisfied) {}
@@ -39,6 +45,9 @@ private:
     AuthorityDomainIdentity domain_;
     ProductionTransitionRequestBinding binding_;
     std::uint64_t authoritativeEpoch_;
+    bool liveBindingCurrent_;
+    bool stateCurrent_;
+    bool transitionClassCurrent_;
     bool freshnessSatisfied_;
     bool revalidationSatisfied_;
     bool authorityPolicySatisfied_;
