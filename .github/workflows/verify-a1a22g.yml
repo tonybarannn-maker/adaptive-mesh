@@ -1,0 +1,70 @@
+name: Verify A.1a-2.2g exact SHA
+
+on:
+  push:
+    branches:
+      - verification/a1a22g-3e6e8f5e
+
+jobs:
+  verify-exact-sha:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact A.1a-2.2g SHA
+        uses: actions/checkout@v4
+        with:
+          ref: 3e6e8f5e55ce0cdb45f06268bfe7c2217e3bd52d
+          fetch-depth: 0
+
+      - name: Assert exact SHA and clean tree
+        run: |
+          test "$(git rev-parse HEAD)" = "3e6e8f5e55ce0cdb45f06268bfe7c2217e3bd52d"
+          git diff --exit-code
+          git diff --cached --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"
+
+      - name: Configure Release warnings-as-errors
+        run: >-
+          cmake -S . -B build-a1a22g -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_TESTS=ON
+          -DBUILD_BENCHMARKS=ON
+          -DBUILD_EXAMPLES=ON
+          -DSOAM_WARNINGS_AS_ERRORS=ON
+
+      - name: Verify registered test count
+        run: |
+          ctest --test-dir build-a1a22g -N | tee build-a1a22g/ctest-list.txt
+          grep -q '^Total Tests: 28$' build-a1a22g/ctest-list.txt
+          grep -q 'proof_token_delta_v0' build-a1a22g/ctest-list.txt
+
+      - name: Run token-delta/v0 guard
+        run: ctest --test-dir build-a1a22g -R '^proof_token_delta_v0$' --output-on-failure
+
+      - name: Build all configured targets
+        run: cmake --build build-a1a22g --parallel 2
+
+      - name: Full CTest
+        run: ctest --test-dir build-a1a22g --output-on-failure
+
+      - name: Install sanity
+        run: |
+          cmake --install build-a1a22g --prefix "$PWD/stage"
+          test -f stage/include/system_architecture.hpp
+          test -f stage/include/production_transition_evaluator.hpp
+          test -f stage/lib/cmake/AdaptiveMesh/AdaptiveMeshConfig.cmake
+          test ! -e stage/include/tests/proofs/token_delta_v0.py
+
+      - name: Structural evaluator canonicalization gates
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          evaluator = Path('cmake/templates/production_transition_evaluator.hpp.in').read_text()
+          mesh = Path('cmake/templates/system_architecture.hpp.in').read_text()
+          proof = Path('tests/proofs/token_delta_v0.py').read_text()
+          assert '@SOAM_SCENARIO_FORWARD_DECL@' not in evaluator
+          assert '@SOAM_SCENARIO_FORWARD_DECL@' in mesh
+          assert '@SOAM_MESH_SCENARIO_FRIEND@' in mesh
+          assert 'evaluator normal/profile/scenario token delta: 0' in proof
+          assert 'scenario residual whitelist: 1 forward declaration + 1 mesh friend' in proof
+          PY
+          test -z "$(git diff e165c5227d17bb743f278d9d4285970c6a5f38ec..HEAD -- src include CMakeLists.txt cmake/templates/system_architecture.hpp.in)"
