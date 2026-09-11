@@ -15,7 +15,6 @@ class ProductionTransitionEvaluatorBindingAccess;
 class ProductionTransitionEvaluationBinding;
 class EvaluationLease;
 class BindingState;
-@SOAM_SCENARIO_FORWARD_DECL@
 
 class ProductionTransitionEvaluationBindingHandle final {
 public:
