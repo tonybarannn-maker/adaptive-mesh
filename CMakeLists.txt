@@ -87,6 +87,18 @@ add_library(AdaptiveMesh::adaptive_mesh_k12_live ALIAS adaptive_mesh_k12_live)
 
 if(BUILD_TESTS)
   enable_testing()
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  add_test(NAME proof_token_delta_v0
+    COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/proofs/token_delta_v0.py
+      --cxx ${CMAKE_CXX_COMPILER}
+      --compiler-id ${CMAKE_CXX_COMPILER_ID}
+      --source-include ${CMAKE_CURRENT_SOURCE_DIR}/include
+      --normal ${SOAM_NORMAL_INCLUDE_DIR}
+      --profile ${SOAM_PROFILE_INCLUDE_DIR}
+      --scenario ${SOAM_SCENARIO_INCLUDE_DIR})
+  set_tests_properties(proof_token_delta_v0 PROPERTIES TIMEOUT 30)
+
   soam_add_runtime(adaptive_mesh_scenario "${SOAM_SCENARIO_INCLUDE_DIR}" 0)
   set_target_properties(adaptive_mesh_scenario PROPERTIES EXCLUDE_FROM_ALL TRUE)
   add_library(adaptive_mesh_k12_scenario_support STATIC
@@ -186,7 +198,7 @@ install(EXPORT AdaptiveMeshTargets FILE AdaptiveMeshTargets.cmake
   NAMESPACE AdaptiveMesh:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/AdaptiveMesh)
 configure_package_config_file(cmake/AdaptiveMeshConfig.cmake.in
   "${CMAKE_CURRENT_BINARY_DIR}/AdaptiveMeshConfig.cmake"
-  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/AdaptiveMesh)
+  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR})
 write_basic_package_version_file("${CMAKE_CURRENT_BINARY_DIR}/AdaptiveMeshConfigVersion.cmake"
   VERSION ${PROJECT_VERSION} COMPATIBILITY SameMinorVersion)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/AdaptiveMeshConfig.cmake"
