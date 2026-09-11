@@ -10,8 +10,7 @@ enum class LiveScenario : std::uint8_t {
     changed_persistence_stale,
     persistence_anti_resurrection,
     unrelated_relationship_isolation,
-    reverse_direction_isolation,
-    invalidate_and_drain
+    reverse_direction_isolation
 };
 
 enum class CommitScenario : std::uint8_t {
