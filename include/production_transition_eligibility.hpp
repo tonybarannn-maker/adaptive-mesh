@@ -8,6 +8,7 @@ namespace AdaptiveMesh {
 
 namespace detail {
 class ProductionTransitionConstructionAccess;
+class ProductionAuthorityDerivationAccess;
 }
 
 enum class RequestedTransitionDirection {
@@ -80,6 +81,7 @@ private:
     std::uint64_t opaqueVersion_;
 
     friend class detail::ProductionTransitionConstructionAccess;
+    friend class detail::ProductionAuthorityDerivationAccess;
 };
 
 class ProductionTransitionClassId final {
@@ -96,6 +98,7 @@ private:
     std::uint64_t opaqueClassId_;
 
     friend class detail::ProductionTransitionConstructionAccess;
+    friend class detail::ProductionAuthorityDerivationAccess;
 };
 
 class ProductionTransitionRequestBinding final {
