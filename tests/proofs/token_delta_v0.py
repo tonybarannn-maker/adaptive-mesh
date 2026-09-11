@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Diagnostic guard for the known normal/profile/scenario public-token delta.
 
-This is intentionally *not* the A.1b zero-delta proof.  It freezes the current
+This is intentionally *not* the A.1b zero-delta proof. It freezes the current
 residual scenario-only declaration variance so that no additional public tokens
 can appear unnoticed before the scenario privilege is removed.
 """
@@ -46,15 +46,16 @@ def tokenize(text: str) -> list[str]:
     return TOKEN_RE.findall(text)
 
 
-def preprocess(
+def preprocess_header(
     cxx: str,
     compiler_id: str,
     source_include: Path,
     generated_include: Path,
+    header: str,
 ) -> list[str]:
     with tempfile.TemporaryDirectory(prefix="soam-token-delta-") as tmp:
         tu = Path(tmp) / "public_surface.cpp"
-        tu.write_text('#include "system_architecture.hpp"\n', encoding="utf-8")
+        tu.write_text(f'#include "{header}"\n', encoding="utf-8")
 
         if compiler_id == "MSVC":
             command = [
@@ -89,7 +90,7 @@ def preprocess(
         )
         if completed.returncode != 0:
             fail(
-                f"preprocessor failed for {generated_include}:\n"
+                f"preprocessor failed for {generated_include}/{header}:\n"
                 f"{completed.stderr}"
             )
         return tokenize(completed.stdout)
@@ -126,12 +127,9 @@ def remove_sequence(
     return result
 
 
-def assert_generated_normal_profile_identity(normal: Path, profile: Path) -> None:
-    for header in ("system_architecture.hpp", "production_transition_evaluator.hpp"):
-        normal_bytes = (normal / header).read_bytes()
-        profile_bytes = (profile / header).read_bytes()
-        if normal_bytes != profile_bytes:
-            fail(f"normal/profile generated {header} are not byte-identical")
+def assert_generated_identity(left: Path, right: Path, header: str, label: str) -> None:
+    if (left / header).read_bytes() != (right / header).read_bytes():
+        fail(f"{label} generated {header} are not byte-identical")
 
 
 def first_difference(left: list[str], right: list[str]) -> str:
@@ -147,6 +145,11 @@ def first_difference(left: list[str], right: list[str]) -> str:
     return f"token stream lengths differ: normal={len(left)}, scenario={len(right)}"
 
 
+def assert_no_scenario_vocabulary(tokens: list[str], label: str) -> None:
+    if count_sequence(tokens, FORWARD) != 0 or count_sequence(tokens, FRIEND) != 0:
+        fail(f"scenario-only declaration vocabulary leaked into {label} token stream")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--cxx", required=True)
@@ -157,26 +160,74 @@ def main() -> int:
     parser.add_argument("--scenario", type=Path, required=True)
     args = parser.parse_args()
 
-    assert_generated_normal_profile_identity(args.normal, args.profile)
+    # Profile public headers remain byte-identical to normal.
+    for header in ("system_architecture.hpp", "production_transition_evaluator.hpp"):
+        assert_generated_identity(args.normal, args.profile, header, "normal/profile")
 
-    normal_tokens = preprocess(
-        args.cxx, args.compiler_id, args.source_include, args.normal
+    # Evaluator header is now fully canonical across all configurations.
+    assert_generated_identity(
+        args.normal,
+        args.scenario,
+        "production_transition_evaluator.hpp",
+        "normal/scenario",
     )
-    profile_tokens = preprocess(
-        args.cxx, args.compiler_id, args.source_include, args.profile
+
+    normal_evaluator = preprocess_header(
+        args.cxx,
+        args.compiler_id,
+        args.source_include,
+        args.normal,
+        "production_transition_evaluator.hpp",
     )
-    scenario_tokens = preprocess(
-        args.cxx, args.compiler_id, args.source_include, args.scenario
+    profile_evaluator = preprocess_header(
+        args.cxx,
+        args.compiler_id,
+        args.source_include,
+        args.profile,
+        "production_transition_evaluator.hpp",
+    )
+    scenario_evaluator = preprocess_header(
+        args.cxx,
+        args.compiler_id,
+        args.source_include,
+        args.scenario,
+        "production_transition_evaluator.hpp",
+    )
+    if not (normal_evaluator == profile_evaluator == scenario_evaluator):
+        fail("production_transition_evaluator.hpp token streams are not canonical")
+    assert_no_scenario_vocabulary(normal_evaluator, "normal evaluator")
+    assert_no_scenario_vocabulary(profile_evaluator, "profile evaluator")
+    assert_no_scenario_vocabulary(scenario_evaluator, "scenario evaluator")
+
+    normal_tokens = preprocess_header(
+        args.cxx,
+        args.compiler_id,
+        args.source_include,
+        args.normal,
+        "system_architecture.hpp",
+    )
+    profile_tokens = preprocess_header(
+        args.cxx,
+        args.compiler_id,
+        args.source_include,
+        args.profile,
+        "system_architecture.hpp",
+    )
+    scenario_tokens = preprocess_header(
+        args.cxx,
+        args.compiler_id,
+        args.source_include,
+        args.scenario,
+        "system_architecture.hpp",
     )
 
     if normal_tokens != profile_tokens:
         fail("normal/profile preprocessed public token streams differ")
 
-    # system_architecture.hpp transitively includes production_transition_evaluator.hpp.
-    # Therefore the current scenario TU contains exactly two scenario forward
-    # declarations (one from each generated header) and exactly one mesh friend.
+    # Only the mesh header retains scenario vocabulary: one direct forward
+    # declaration and one private friend declaration.
     stripped = remove_sequence(scenario_tokens, FRIEND, 1)
-    stripped = remove_sequence(stripped, FORWARD, 2)
+    stripped = remove_sequence(stripped, FORWARD, 1)
 
     if stripped != normal_tokens:
         fail(
@@ -184,14 +235,13 @@ def main() -> int:
             + first_difference(normal_tokens, stripped)
         )
 
-    if count_sequence(normal_tokens, FORWARD) != 0 or count_sequence(normal_tokens, FRIEND) != 0:
-        fail("scenario-only declaration vocabulary leaked into normal token stream")
-    if count_sequence(profile_tokens, FORWARD) != 0 or count_sequence(profile_tokens, FRIEND) != 0:
-        fail("scenario-only declaration vocabulary leaked into profile token stream")
+    assert_no_scenario_vocabulary(normal_tokens, "normal system architecture")
+    assert_no_scenario_vocabulary(profile_tokens, "profile system architecture")
 
     print("token-delta/v0: PASS")
     print("normal/profile token delta: 0")
-    print("scenario residual whitelist: 2 forward declarations + 1 mesh friend")
+    print("evaluator normal/profile/scenario token delta: 0")
+    print("scenario residual whitelist: 1 forward declaration + 1 mesh friend")
     return 0
 
 
