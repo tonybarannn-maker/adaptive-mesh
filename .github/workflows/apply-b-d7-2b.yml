@@ -1,0 +1,93 @@
+name: apply-b-d7-2b
+
+on:
+  push:
+    branches:
+      - automation/apply-b-d7-2b
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout implementation branch
+        uses: actions/checkout@v4
+        with:
+          ref: implementation/wave-b-d7-2b-pure-snapshot-direction
+          fetch-depth: 0
+
+      - name: Assert exact base SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "be9c2c09df0a231ec6979bdb2ac7279df543af54"
+          test -z "$(git status --porcelain)"
+
+      - name: Apply B.D7-2b patch
+        shell: python
+        run: |
+          from pathlib import Path
+
+          internal = Path("src/detail/production_transition_evaluation_internal.hpp")
+          text = internal.read_text()
+
+          old = '''    [[nodiscard]]\n    static constexpr RequestDerivationResult requestDerivationFailed()\n        noexcept {\n        return {\n            RequestDerivationStatus::unavailable_or_failed,\n            std::nullopt\n        };\n    }\n};\n'''
+          new = '''    [[nodiscard]]\n    static constexpr RequestDerivationResult requestDerivationFailed()\n        noexcept {\n        return {\n            RequestDerivationStatus::unavailable_or_failed,\n            std::nullopt\n        };\n    }\n\n    [[nodiscard]]\n    static RequestDerivationResult deriveCapturedDirection(\n        const CoherentProductionTransitionSnapshot& snapshot) noexcept;\n};\n'''
+          assert text.count(old) == 1
+          text = text.replace(old, new)
+
+          old = '''    [[nodiscard]] static ProductionPersistenceState state(\n        const ProductionPersistenceRecord& record) noexcept {\n        return state(record.persistence_);\n    }\n\n    friend class ProductionTransitionEvaluatorScenarioAccess;\n'''
+          new = '''    [[nodiscard]] static ProductionPersistenceState state(\n        const ProductionPersistenceRecord& record) noexcept {\n        return state(record.persistence_);\n    }\n\n    [[nodiscard]] static PersistentBridgeRecommendation recommendation(\n        const ProductionPersistenceState& state) noexcept {\n        return static_cast<PersistentBridgeRecommendation>(state.recommendation);\n    }\n\n    friend class ProductionTransitionEvaluatorScenarioAccess;\n'''
+          assert text.count(old) == 1
+          text = text.replace(old, new)
+
+          marker = '''};\n\nclass PermissionValidationResult final {\n'''
+          helper = '''};\n\ninline RequestDerivationResult\nProductionTransitionEvaluationBackend::deriveCapturedDirection(\n    const CoherentProductionTransitionSnapshot& snapshot) noexcept {\n    if (snapshot.d7PublicationStatus() !=\n        ProductionD7PublicationStatus::authoritative) {\n        return requestDerivationFailed();\n    }\n\n    switch (ProductionPersistenceAccess::recommendation(\n        snapshot.persistenceState())) {\n    case PersistentBridgeRecommendation::PRESERVE:\n        return noRequest();\n    case PersistentBridgeRecommendation::CONSTRAIN:\n        return derivedRequest(\n            snapshot, RequestedTransitionDirection::constrain);\n    case PersistentBridgeRecommendation::SUPPORT:\n        return derivedRequest(\n            snapshot, RequestedTransitionDirection::support);\n    }\n\n    return requestDerivationFailed();\n}\n\nclass PermissionValidationResult final {\n'''
+          assert text.count(marker) == 1
+          text = text.replace(marker, helper)
+          internal.write_text(text)
+
+          impl = Path("src/detail/spatial_adaptive_mesh_impl.hpp")
+          text = impl.read_text()
+          old = '''            [[nodiscard]] detail::RequestDerivationResult deriveDirection(\n                const detail::CoherentProductionTransitionSnapshot& snapshot)\n                override {\n                std::shared_lock lock(owner_.topologyMutex);\n                const auto* current =\n                    owner_.findLifecycleUnlocked(snapshot.relationship());\n                if (current == nullptr ||\n                    current->authorityRelevantContextLineage !=\n                        snapshot.lineage()) {\n                    return requestDerivationFailed();\n                }\n                // D7 production observation/confidence provenance is not\n                // available in this authorized slice, so no production-native\n                // request direction may be derived yet.\n                return requestDerivationFailed();\n            }\n'''
+          new = '''            [[nodiscard]] detail::RequestDerivationResult deriveDirection(\n                const detail::CoherentProductionTransitionSnapshot& snapshot)\n                override {\n                return deriveCapturedDirection(snapshot);\n            }\n'''
+          assert text.count(old) == 1
+          impl.write_text(text.replace(old, new))
+
+          tests = Path("tests/production_persistence_tests.cpp")
+          text = tests.read_text()
+          old = '''class SnapshotFactory : public detail::ProductionTransitionEvaluationBackend {\npublic:\n    [[nodiscard]] static detail::SnapshotCaptureResult rebuild(\n        const detail::CoherentProductionTransitionSnapshot& snapshot,\n        detail::ProductionD7PublicationStatus status,\n        const detail::ProductionD7PublicationLineage& lineage) {\n        return completeSnapshot(\n            snapshot.relationship(),\n            snapshot.stateVersion().opaqueValueForConstruction(),\n            snapshot.transitionClass().opaqueValueForConstruction(),\n            snapshot.lineage(),\n            status,\n            lineage,\n            snapshot.persistenceState(),\n            snapshot.persistenceLineage());\n    }\n};\n'''
+          new = '''class SnapshotFactory : public detail::ProductionTransitionEvaluationBackend {\npublic:\n    [[nodiscard]] static detail::SnapshotCaptureResult rebuild(\n        const detail::CoherentProductionTransitionSnapshot& snapshot,\n        detail::ProductionD7PublicationStatus status,\n        const detail::ProductionD7PublicationLineage& lineage) {\n        return completeSnapshot(\n            snapshot.relationship(),\n            snapshot.stateVersion().opaqueValueForConstruction(),\n            snapshot.transitionClass().opaqueValueForConstruction(),\n            snapshot.lineage(),\n            status,\n            lineage,\n            snapshot.persistenceState(),\n            snapshot.persistenceLineage());\n    }\n\n    [[nodiscard]] static detail::SnapshotCaptureResult forDirection(\n        const detail::CoherentProductionTransitionSnapshot& snapshot,\n        detail::ProductionD7PublicationStatus status,\n        PersistentBridgeRecommendation recommendation) {\n        auto persistence = snapshot.persistenceState();\n        persistence.recommendation = static_cast<std::uint8_t>(recommendation);\n        return completeSnapshot(\n            snapshot.relationship(),\n            snapshot.stateVersion().opaqueValueForConstruction(),\n            snapshot.transitionClass().opaqueValueForConstruction(),\n            snapshot.lineage(),\n            status,\n            snapshot.d7PublicationLineage(),\n            persistence,\n            snapshot.persistenceLineage());\n    }\n\n    [[nodiscard]] static detail::RequestDerivationResult derive(\n        const detail::CoherentProductionTransitionSnapshot& snapshot) noexcept {\n        return deriveCapturedDirection(snapshot);\n    }\n};\n'''
+          assert text.count(old) == 1
+          text = text.replace(old, new)
+
+          marker = '''void testD7PublicationSnapshotCoherence() {\n'''
+          testfn = '''void testD7DirectionDerivationFromCapturedSnapshot() {\n    SpatialAdaptiveMesh mesh;\n    mesh.addNode(0, {0.0, 0.0, 0.0}, 1.0);\n    mesh.addNode(1, {1.0, 0.0, 0.0}, 1.0);\n    mesh.connectNodes(0, 1);\n\n    const auto captured =\n        detail::SpatialAdaptiveMeshInternalAccess::captureProductionSnapshot(\n            mesh, 0, 1);\n    require(captured.snapshot().has_value());\n    const auto& snapshot = *captured.snapshot();\n\n    const auto unpublished = SnapshotFactory::derive(snapshot);\n    require(\n        unpublished.status() ==\n        detail::RequestDerivationStatus::unavailable_or_failed);\n    require(!unpublished.direction().has_value());\n\n    const auto unavailableSnapshot = SnapshotFactory::forDirection(\n        snapshot,\n        detail::ProductionD7PublicationStatus::unavailable,\n        PersistentBridgeRecommendation::PRESERVE);\n    require(unavailableSnapshot.snapshot().has_value());\n    const auto unavailable = SnapshotFactory::derive(\n        *unavailableSnapshot.snapshot());\n    require(\n        unavailable.status() ==\n        detail::RequestDerivationStatus::unavailable_or_failed);\n    require(!unavailable.direction().has_value());\n\n    const auto preserveSnapshot = SnapshotFactory::forDirection(\n        snapshot,\n        detail::ProductionD7PublicationStatus::authoritative,\n        PersistentBridgeRecommendation::PRESERVE);\n    require(preserveSnapshot.snapshot().has_value());\n    const auto preserve = SnapshotFactory::derive(*preserveSnapshot.snapshot());\n    require(preserve.status() == detail::RequestDerivationStatus::no_request);\n    require(!preserve.direction().has_value());\n\n    const auto constrainSnapshot = SnapshotFactory::forDirection(\n        snapshot,\n        detail::ProductionD7PublicationStatus::authoritative,\n        PersistentBridgeRecommendation::CONSTRAIN);\n    require(constrainSnapshot.snapshot().has_value());\n    const auto constrain = SnapshotFactory::derive(*constrainSnapshot.snapshot());\n    require(constrain.status() == detail::RequestDerivationStatus::derived);\n    require(constrain.direction().has_value());\n    require(\n        constrain.direction()->direction() ==\n        RequestedTransitionDirection::constrain);\n    require(constrain.direction()->lineage() == snapshot.lineage());\n\n    const auto supportSnapshot = SnapshotFactory::forDirection(\n        snapshot,\n        detail::ProductionD7PublicationStatus::authoritative,\n        PersistentBridgeRecommendation::SUPPORT);\n    require(supportSnapshot.snapshot().has_value());\n    const auto support = SnapshotFactory::derive(*supportSnapshot.snapshot());\n    require(support.status() == detail::RequestDerivationStatus::derived);\n    require(support.direction().has_value());\n    require(\n        support.direction()->direction() ==\n        RequestedTransitionDirection::support);\n    require(support.direction()->lineage() == snapshot.lineage());\n}\n\nvoid testD7PublicationSnapshotCoherence() {\n'''
+          assert text.count(marker) == 1
+          text = text.replace(marker, testfn)
+
+          old = '''    testResetClearsCompleteState();\n    testD7PublicationSnapshotCoherence();\n    return EXIT_SUCCESS;\n'''
+          new = '''    testResetClearsCompleteState();\n    testD7DirectionDerivationFromCapturedSnapshot();\n    testD7PublicationSnapshotCoherence();\n    return EXIT_SUCCESS;\n'''
+          assert text.count(old) == 1
+          tests.write_text(text.replace(old, new))
+
+      - name: Inspect patch perimeter
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git diff -- src/detail/production_transition_evaluation_internal.hpp src/detail/spatial_adaptive_mesh_impl.hpp tests/production_persistence_tests.cpp
+          test "$(git diff --name-only | wc -l)" -eq 3
+          test -z "$(git diff --name-only -- include cmake/templates CMakeLists.txt)"
+
+      - name: Commit and push implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "SOAM Automation"
+          git config user.email "soam-automation@users.noreply.github.com"
+          git add src/detail/production_transition_evaluation_internal.hpp src/detail/spatial_adaptive_mesh_impl.hpp tests/production_persistence_tests.cpp
+          git commit -m "feat: derive D7 direction from coherent snapshot"
+          git push origin HEAD:implementation/wave-b-d7-2b-pure-snapshot-direction
