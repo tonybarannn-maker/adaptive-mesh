@@ -38,12 +38,25 @@ jobs:
           test ! -e stage/include/detail/spatial_adaptive_mesh_internal_access.hpp
       - name: Structural bridge observation gates
         run: |
-          FILE=tests/support/production_transition_evaluator_live_scenarios.cpp
-          test "$(grep -c 'committedBridgeStatus' "$FILE" || true)" = "0"
-          test "$(grep -o 'mesh\.impl_' "$FILE" | wc -l)" = "19"
-          grep -q 'CommitResult::committed' "$FILE"
-          test "$(grep -c 'static ProductionExecutionCapability issueCapability' "$FILE")" = "1"
-          test "$(grep -c 'issueSameIdentityPair' "$FILE")" = "2"
-          grep -q 'advanceAuthorityVersion' "$FILE"
-          grep -q 'CommitScenario::expired_capability' "$FILE"
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('tests/support/production_transition_evaluator_live_scenarios.cpp')
+          s = p.read_text()
+          checks = {
+              'committedBridgeStatus': s.count('committedBridgeStatus'),
+              'mesh.impl_': s.count('mesh.impl_'),
+              'issueCapability definition': s.count('static ProductionExecutionCapability issueCapability'),
+              'issueSameIdentityPair': s.count('issueSameIdentityPair'),
+              'advanceAuthorityVersion': s.count('advanceAuthorityVersion'),
+              'expired scenario': s.count('CommitScenario::expired_capability'),
+          }
+          print(checks)
+          assert checks['committedBridgeStatus'] == 0
+          assert checks['mesh.impl_'] == 19
+          assert checks['issueCapability definition'] == 1
+          assert checks['issueSameIdentityPair'] == 2
+          assert checks['advanceAuthorityVersion'] >= 1
+          assert checks['expired scenario'] == 1
+          assert 'CommitResult::committed' in s
+          PY
           test -z "$(git diff 88e93aed57444b58e57969d4ae28195fe66097de..HEAD -- src include cmake CMakeLists.txt)"
