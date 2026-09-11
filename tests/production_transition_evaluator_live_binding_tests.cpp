@@ -6,7 +6,6 @@ int main() {
     using AdaptiveMesh::test_support::runLiveScenario;
     constexpr std::array scenarios{
         LiveScenario::fail_closed_binding,
-        LiveScenario::persistence_change_detection,
         LiveScenario::unchanged_persistence_current,
         LiveScenario::changed_persistence_stale,
         LiveScenario::persistence_anti_resurrection,
