@@ -54,11 +54,14 @@ public:
 
     [[nodiscard]] detail::SnapshotCaptureResult captureSnapshot(
         const detail::CapturedRelationshipIdentity& relationship) override {
+        const detail::ProductionD7PublicationRecord publication;
         return completeSnapshot(
             relationship,
             21,
             11,
-            77);
+            77,
+            detail::ProductionD7PublicationStatus::authoritative,
+            publication.lineage());
     }
 
     [[nodiscard]] detail::RequestDerivationResult deriveDirection(
