@@ -44,7 +44,7 @@ jobs:
       - name: Verify registered test count
         run: |
           ctest --test-dir build-a1a14 -N | tee build-a1a14/ctest-list.txt
-          test "$(grep -c '^  Test #' build-a1a14/ctest-list.txt)" -eq 27
+          grep -q '^Total Tests: 27$' build-a1a14/ctest-list.txt
       - name: Full CTest
         run: ctest --test-dir build-a1a14 --output-on-failure
       - name: Install sanity
