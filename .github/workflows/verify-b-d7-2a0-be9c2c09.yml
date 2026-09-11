@@ -1,0 +1,96 @@
+name: verify-b-d7-2a0-be9c2c09
+
+on:
+  push:
+    branches:
+      - verification/b-d7-2a0-be9c2c09
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact implementation SHA
+        uses: actions/checkout@v4
+        with:
+          ref: be9c2c09df0a231ec6979bdb2ac7279df543af54
+          fetch-depth: 0
+
+      - name: Assert exact SHA and clean tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "be9c2c09df0a231ec6979bdb2ac7279df543af54"
+          test -z "$(git status --porcelain)"
+
+      - name: Toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --version
+          c++ --version
+          python3 --version
+          ninja --version
+
+      - name: Configure
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTS=ON \
+            -DBUILD_BENCHMARKS=ON \
+            -DBUILD_EXAMPLES=ON \
+            -DSOAM_WARNINGS_AS_ERRORS=ON
+
+      - name: Registered test count
+        shell: bash
+        run: |
+          set -euo pipefail
+          ctest --test-dir build -N | tee /tmp/ctest-list.txt
+          grep -F "Total Tests: 28" /tmp/ctest-list.txt
+          grep -F "proof_token_delta_v0" /tmp/ctest-list.txt
+
+      - name: Frozen token-delta proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          ctest --test-dir build -R '^proof_token_delta_v0$' --output-on-failure
+
+      - name: Build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build build --parallel 2
+
+      - name: Full CTest
+        shell: bash
+        run: |
+          set -euo pipefail
+          ctest --test-dir build --output-on-failure
+
+      - name: Install sanity
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf stage
+          cmake --install build --prefix "$PWD/stage"
+          test -f stage/include/system_architecture.hpp
+          test -f stage/include/production_transition_evaluator.hpp
+          test -f stage/lib/cmake/AdaptiveMesh/AdaptiveMeshConfig.cmake
+          test ! -e stage/tests/proofs/token_delta_v0.py
+
+      - name: Structural gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(grep -o 'mesh\.impl_' tests/support/production_transition_evaluator_live_scenarios.cpp | wc -l)" -eq 15
+          grep -F 'enum class ProductionD7PublicationStatus' src/detail/production_transition_evaluation_internal.hpp
+          grep -F 'class ProductionD7PublicationLineage final' src/detail/production_transition_evaluation_internal.hpp
+          grep -F 'class ProductionD7PublicationRecord final' src/detail/production_transition_evaluation_internal.hpp
+          grep -F 'd7PublicationStatus()' src/detail/production_transition_evaluation_internal.hpp
+          grep -F 'd7PublicationLineage()' src/detail/production_transition_evaluation_internal.hpp
+          grep -F 'detail::ProductionD7PublicationRecord d7Publication;' src/detail/spatial_adaptive_mesh_impl.hpp
+          grep -F 'current->d7Publication.status() !=' src/detail/spatial_adaptive_mesh_impl.hpp
+          grep -F 'current->d7Publication.lineage() !=' src/detail/spatial_adaptive_mesh_impl.hpp
+          grep -F 'D7 production observation/confidence provenance is not' src/detail/spatial_adaptive_mesh_impl.hpp
+          git diff --exit-code 3e6e8f5e55ce0cdb45f06268bfe7c2217e3bd52d..HEAD -- include cmake/templates CMakeLists.txt
