@@ -10,11 +10,13 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <type_traits>
 
 namespace AdaptiveMesh::detail {
 
 class ProductionPersistenceAccess;
 class ProductionPersistenceRecord;
+class ProductionD7PublicationTransactionAccess;
 class ProductionTransitionEvaluatorScenarioAccess;
 
 struct ProductionPersistenceState final {
@@ -98,9 +100,16 @@ public:
     }
 
 private:
+    void publishDetached(ProductionD7PublicationStatus status) {
+        status_ = status;
+        lineage_.advance();
+    }
+
     ProductionD7PublicationStatus status_ =
         ProductionD7PublicationStatus::unpublished;
     ProductionD7PublicationLineage lineage_;
+
+    friend class ProductionD7PublicationTransactionAccess;
 };
 
 class CapturedRelationshipIdentity final {
@@ -148,6 +157,97 @@ private:
 
     friend class ProductionTransitionEvaluationBackend;
 };
+
+enum class ProductionD7PublicationCommitStatus : std::uint8_t {
+    committed = 0,
+    stale_acquisition = 1
+};
+
+class ProductionD7PublicationInput final {
+public:
+    [[nodiscard]] static ProductionD7PublicationInput authoritative(
+        BridgePolicyEvidence evidence) noexcept {
+        return ProductionD7PublicationInput{
+            std::optional<BridgePolicyEvidence>{evidence}};
+    }
+
+    [[nodiscard]] static ProductionD7PublicationInput unavailable() noexcept {
+        return ProductionD7PublicationInput{std::nullopt};
+    }
+
+    [[nodiscard]] const BridgePolicyEvidence* authoritativeEvidence()
+        const noexcept {
+        return evidence_ ? &*evidence_ : nullptr;
+    }
+
+private:
+    explicit ProductionD7PublicationInput(
+        std::optional<BridgePolicyEvidence> evidence) noexcept
+        : evidence_(std::move(evidence))
+    {
+    }
+
+    std::optional<BridgePolicyEvidence> evidence_;
+};
+
+static_assert(
+    std::is_nothrow_move_constructible_v<ProductionD7PublicationInput>);
+
+class ProductionD7PublicationCasState final {
+public:
+    ProductionD7PublicationCasState(
+        CapturedRelationshipIdentity identity,
+        std::uint64_t contextLineage,
+        ProductionD7PublicationLineage d7Lineage,
+        ProductionPersistenceLineage persistenceLineage) noexcept
+        : identity_(std::move(identity)),
+          contextLineage_(contextLineage),
+          d7Lineage_(std::move(d7Lineage)),
+          persistenceLineage_(std::move(persistenceLineage))
+    {
+    }
+
+    [[nodiscard]] const CapturedRelationshipIdentity& identity()
+        const noexcept {
+        return identity_;
+    }
+
+    [[nodiscard]] std::uint64_t contextLineage() const noexcept {
+        return contextLineage_;
+    }
+
+    [[nodiscard]] const ProductionD7PublicationLineage& d7Lineage()
+        const noexcept {
+        return d7Lineage_;
+    }
+
+    [[nodiscard]] const ProductionPersistenceLineage& persistenceLineage()
+        const noexcept {
+        return persistenceLineage_;
+    }
+
+private:
+    CapturedRelationshipIdentity identity_;
+    std::uint64_t contextLineage_;
+    ProductionD7PublicationLineage d7Lineage_;
+    ProductionPersistenceLineage persistenceLineage_;
+};
+
+[[nodiscard]] inline bool publicationCasMatches(
+    const ProductionD7PublicationCasState& expected,
+    const ProductionD7PublicationCasState& current) noexcept {
+    const auto& expectedIdentity = expected.identity();
+    const auto& currentIdentity = current.identity();
+    return
+        expectedIdentity.sourceNodeId() == currentIdentity.sourceNodeId() &&
+        expectedIdentity.targetNodeId() == currentIdentity.targetNodeId() &&
+        expectedIdentity.generation() == currentIdentity.generation() &&
+        expectedIdentity.sourceNodeIncarnation() == currentIdentity.sourceNodeIncarnation() &&
+        expectedIdentity.targetNodeIncarnation() == currentIdentity.targetNodeIncarnation() &&
+        expected.contextLineage() == current.contextLineage() &&
+        expected.d7Lineage() == current.d7Lineage() &&
+        expected.persistenceLineage() == current.persistenceLineage();
+}
 
 class CapturedProductionStateVersion final {
 public:
@@ -732,12 +832,26 @@ public:
         return persistence.completeState() != before;
     }
 
+    [[nodiscard]] static bool interruptPending(
+        BridgePersistence& persistence) noexcept {
+        const auto before = persistence.completeState();
+        persistence.clearPending();
+        return persistence.completeState() != before;
+    }
+
     [[nodiscard]] static ProductionPersistenceEvolutionResult evolve(
         ProductionPersistenceRecord& record,
         const BridgePolicyEvidence& evidence) {
         const auto result = evolve(record.persistence_, evidence);
         if (result.completeStateChanged()) record.lineage_.advance();
         return result;
+    }
+
+    [[nodiscard]] static bool interruptPending(
+        ProductionPersistenceRecord& record) {
+        const bool changed = interruptPending(record.persistence_);
+        if (changed) record.lineage_.advance();
+        return changed;
     }
 
     [[nodiscard]] static ProductionPersistenceLineage lineage(
@@ -757,6 +871,15 @@ public:
 
     friend class ProductionTransitionEvaluatorScenarioAccess;
     friend class ::AdaptiveMesh::SpatialAdaptiveMesh;
+};
+
+class ProductionD7PublicationTransactionAccess final {
+public:
+    static void publishDetached(
+        ProductionD7PublicationRecord& record,
+        ProductionD7PublicationStatus status) {
+        record.publishDetached(status);
+    }
 };
 
 inline RequestDerivationResult

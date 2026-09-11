@@ -59,6 +59,61 @@ struct SpatialAdaptiveMesh::Impl {
             detail::ProductionD7PublicationRecord d7Publication;
         };
 
+        struct D7PublicationCandidate final {
+            detail::ProductionPersistenceRecord persistence;
+            detail::ProductionD7PublicationRecord d7Publication;
+        };
+
+        class PreparedD7PublicationTransaction final {
+        public:
+            PreparedD7PublicationTransaction(
+                detail::ProductionD7PublicationCasState preconditions,
+                detail::ProductionPersistenceRecord persistence,
+                detail::ProductionD7PublicationRecord d7Publication) noexcept
+                : preconditions_(std::move(preconditions)),
+                  candidate_{std::move(persistence), std::move(d7Publication)}
+            {
+            }
+
+            PreparedD7PublicationTransaction(PreparedD7PublicationTransaction&&) noexcept = default;
+            PreparedD7PublicationTransaction(const PreparedD7PublicationTransaction&) = delete;
+            PreparedD7PublicationTransaction& operator=(const PreparedD7PublicationTransaction&) = delete;
+            PreparedD7PublicationTransaction& operator=(PreparedD7PublicationTransaction&&) = delete;
+
+            [[nodiscard]] const detail::ProductionD7PublicationCasState&
+            preconditions() const noexcept {
+                return preconditions_;
+            }
+
+            void prepare(const detail::ProductionD7PublicationInput& input) {
+                if (const auto* evidence = input.authoritativeEvidence()) {
+                    static_cast<void>(detail::ProductionPersistenceAccess::evolve(
+                        candidate_.persistence, *evidence));
+                    detail::ProductionD7PublicationTransactionAccess::publishDetached(
+                        candidate_.d7Publication,
+                        detail::ProductionD7PublicationStatus::authoritative);
+                    return;
+                }
+
+                static_cast<void>(detail::ProductionPersistenceAccess::interruptPending(
+                    candidate_.persistence));
+                detail::ProductionD7PublicationTransactionAccess::publishDetached(
+                    candidate_.d7Publication,
+                    detail::ProductionD7PublicationStatus::unavailable);
+            }
+
+            void installInto(ProductionRelationshipLifecycle& lifecycle) && noexcept {
+                static_assert(std::is_nothrow_move_assignable_v<detail::ProductionPersistenceRecord>);
+                static_assert(std::is_nothrow_move_assignable_v<detail::ProductionD7PublicationRecord>);
+                lifecycle.persistence = std::move(candidate_.persistence);
+                lifecycle.d7Publication = std::move(candidate_.d7Publication);
+            }
+
+        private:
+            detail::ProductionD7PublicationCasState preconditions_;
+            D7PublicationCandidate candidate_;
+        };
+
         class LiveProductionTransitionEvaluationBackend final
             : public detail::ProductionTransitionEvaluationBackend {
         public:
@@ -288,23 +343,89 @@ struct SpatialAdaptiveMesh::Impl {
             }
         }
 
+        [[nodiscard]] static bool matchesLifecycleIdentity(
+            const ProductionRelationshipLifecycle& lifecycle,
+            const detail::CapturedRelationshipIdentity& relationship) noexcept {
+            return
+                lifecycle.relationshipGeneration == relationship.generation() &&
+                lifecycle.sourceNodeIncarnation == relationship.sourceNodeIncarnation() &&
+                lifecycle.targetNodeIncarnation == relationship.targetNodeIncarnation();
+        }
+
         [[nodiscard]] const ProductionRelationshipLifecycle*
         findLifecycleUnlocked(
             const detail::CapturedRelationshipIdentity& relationship) const {
             const auto found = productionRelationships_.find(
-                EdgeKey{
-                    relationship.sourceNodeId(),
-                    relationship.targetNodeId()});
-            if (found == productionRelationships_.end()) return nullptr;
-            const auto& current = found->second;
-            if (current.relationshipGeneration != relationship.generation() ||
-                current.sourceNodeIncarnation !=
-                    relationship.sourceNodeIncarnation() ||
-                current.targetNodeIncarnation !=
-                    relationship.targetNodeIncarnation()) {
+                EdgeKey{relationship.sourceNodeId(), relationship.targetNodeId()});
+            if (found == productionRelationships_.end() ||
+                !matchesLifecycleIdentity(found->second, relationship)) {
                 return nullptr;
             }
-            return &current;
+            return &found->second;
+        }
+
+        [[nodiscard]] ProductionRelationshipLifecycle*
+        findLifecycleUnlocked(
+            const detail::CapturedRelationshipIdentity& relationship) {
+            const auto found = productionRelationships_.find(
+                EdgeKey{relationship.sourceNodeId(), relationship.targetNodeId()});
+            if (found == productionRelationships_.end() ||
+                !matchesLifecycleIdentity(found->second, relationship)) {
+                return nullptr;
+            }
+            return &found->second;
+        }
+
+        [[nodiscard]] static detail::ProductionD7PublicationCasState publicationCasState(
+            const detail::CapturedRelationshipIdentity& relationship,
+            const ProductionRelationshipLifecycle& lifecycle) noexcept {
+            return {
+                relationship,
+                lifecycle.authorityRelevantContextLineage,
+                lifecycle.d7Publication.lineage(),
+                detail::ProductionPersistenceAccess::lineage(lifecycle.persistence)};
+        }
+
+        [[nodiscard]] std::optional<PreparedD7PublicationTransaction>
+        prepareD7Publication(
+            const ProductionTransitionEvaluationLocator& locator,
+            const detail::ProductionD7PublicationInput& input) {
+            LiveProductionTransitionEvaluationBackend backend{*this};
+            const auto resolution = backend.resolveCurrentRelationship(locator);
+            const auto& relationship = resolution.relationship();
+            if (!relationship) return std::nullopt;
+
+            auto transaction = [&]() -> std::optional<PreparedD7PublicationTransaction> {
+                std::shared_lock lock(topologyMutex);
+                const auto* current = findLifecycleUnlocked(*relationship);
+                if (current == nullptr) return std::nullopt;
+                return PreparedD7PublicationTransaction{
+                    publicationCasState(*relationship, *current),
+                    current->persistence,
+                    current->d7Publication};
+            }();
+
+            if (!transaction) return std::nullopt;
+            transaction->prepare(input);
+            return transaction;
+        }
+
+        [[nodiscard]] detail::ProductionD7PublicationCommitStatus
+        commitD7Publication(PreparedD7PublicationTransaction&& transaction) {
+            std::unique_lock lock(topologyMutex);
+            const auto& expected = transaction.preconditions();
+            auto* current = findLifecycleUnlocked(expected.identity());
+            if (current == nullptr) {
+                return detail::ProductionD7PublicationCommitStatus::stale_acquisition;
+            }
+
+            const auto currentState = publicationCasState(expected.identity(), *current);
+            if (!detail::publicationCasMatches(expected, currentState)) {
+                return detail::ProductionD7PublicationCommitStatus::stale_acquisition;
+            }
+
+            std::move(transaction).installInto(*current);
+            return detail::ProductionD7PublicationCommitStatus::committed;
         }
 
         void discardAbsentProductionRelationshipsUnlocked() {
