@@ -8,4 +8,7 @@ target_compile_definitions(domain_consumer PRIVATE SOAM_DOMAIN_ONLY=1)
 target_link_libraries(domain_consumer PRIVATE AdaptiveMesh::adaptive_mesh_domain)
 
 add_executable(runtime_consumer main.cpp)
-target_link_libraries(runtime_consumer PRIVATE AdaptiveMesh::adaptive_mesh_k12_live)
+target_link_libraries(runtime_consumer PRIVATE AdaptiveMesh::adaptive_mesh)
+
+add_executable(k12_live_consumer main.cpp)
+target_link_libraries(k12_live_consumer PRIVATE AdaptiveMesh::adaptive_mesh_k12_live)

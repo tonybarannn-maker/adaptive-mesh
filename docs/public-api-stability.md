@@ -34,6 +34,10 @@ installed package is not older than the requested version. Different minor or
 major lines are rejected. This is a package-selection rule only: it is neither
 ABI evidence nor a release record.
 
+The downstream static-runtime consumption, manual-linking, rebuild, and
+migration contract is defined in
+[`runtime-consumption-and-migration.md`](runtime-consumption-and-migration.md).
+
 ## Exported targets
 
 | Target | Classification | Contract |
@@ -57,9 +61,13 @@ ABI evidence nor a release record.
 | `production_transition_eligibility.hpp` | experimental | K12 production-evidence vocabulary and evaluator |
 | `production_transition_evaluator.hpp` | mixed; see below | Generated K12 live evaluator declarations |
 
-The build currently installs the source header directory as a whole. This
-classification does not make that mechanism an install-policy guarantee;
-explicit install-surface policy remains package/readiness work.
+The build currently installs the source header directory as a whole together
+with generated normal runtime headers. This layout is not itself a support
+classification. The explicit install-surface policy is: supported consumer use
+is determined by the exported target contract and the classifications in this
+document; textual visibility alone does not promote an internal,
+configuration-specific, experimental, or compatibility-only declaration.
+Detailed consumption rules are in `runtime-consumption-and-migration.md`.
 
 ## Stable-preview symbol families
 
