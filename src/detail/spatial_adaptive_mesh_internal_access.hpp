@@ -5,7 +5,7 @@
 namespace AdaptiveMesh::detail {
 
 class SpatialAdaptiveMeshInternalAccess final {
-    class BackendFactoryAccess abstract
+    class BackendFactoryAccess
         : public ProductionTransitionEvaluationBackend {
     public:
         [[nodiscard]] static SnapshotCaptureResult snapshotFailure() noexcept {
