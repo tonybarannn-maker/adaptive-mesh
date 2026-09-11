@@ -16,7 +16,6 @@ enum class LiveScenario : std::uint8_t {
 enum class CommitScenario : std::uint8_t {
     successful_atomic_commit,
     wrong_target,
-    stale_state,
     replay,
     wrong_transition_class,
     expired_capability,
