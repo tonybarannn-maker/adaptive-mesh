@@ -1,0 +1,69 @@
+name: Verify A.1a-2.2f exact SHA
+
+on:
+  push:
+    branches: [verification/a1a22f-522c5fec]
+
+jobs:
+  verify-exact-sha:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact A.1a-2.2f SHA
+        uses: actions/checkout@v4
+        with:
+          ref: 522c5fecd7299b879b3bc3f77177cdd5d79426d6
+          fetch-depth: 0
+      - name: Assert exact SHA and clean tree
+        run: |
+          test "$(git rev-parse HEAD)" = "522c5fecd7299b879b3bc3f77177cdd5d79426d6"
+          git diff --exit-code
+          git diff --cached --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"
+      - name: Configure Release warnings-as-errors
+        run: cmake -S . -B build-a1a22f -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DBUILD_BENCHMARKS=ON -DBUILD_EXAMPLES=ON -DSOAM_WARNINGS_AS_ERRORS=ON
+      - name: Build all configured targets
+        run: cmake --build build-a1a22f --parallel 2
+      - name: Verify registered test count
+        run: |
+          ctest --test-dir build-a1a22f -N | tee build-a1a22f/ctest-list.txt
+          grep -q '^Total Tests: 27$' build-a1a22f/ctest-list.txt
+      - name: Commit scenario integration tests
+        run: ctest --test-dir build-a1a22f -R 'production_transition_commit_tests' --output-on-failure
+      - name: Full CTest
+        run: ctest --test-dir build-a1a22f --output-on-failure
+      - name: Install sanity
+        run: |
+          cmake --install build-a1a22f --prefix "$PWD/stage"
+          test ! -e stage/include/tests/support/production_transition_evaluator_live_scenarios.cpp
+          test ! -e stage/include/detail/spatial_adaptive_mesh_internal_access.hpp
+      - name: Structural authority-version stale removal gates
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          live = Path('tests/support/production_transition_evaluator_live_scenarios.cpp').read_text()
+          hdr = Path('tests/internal/production_transition_evaluator_live_scenarios.hpp').read_text()
+          exe = Path('tests/production_transition_commit_tests.cpp').read_text()
+          counts = {
+              'mesh.impl_': live.count('mesh.impl_'),
+              'advanceAuthorityVersion': live.count('advanceAuthorityVersion'),
+              'live stale scenario': live.count('CommitScenario::stale_state'),
+              'header stale scenario': hdr.count('stale_state'),
+              'executable stale scenario': exe.count('CommitScenario::stale_state'),
+              'issueCapability definition': live.count('static ProductionExecutionCapability issueCapability'),
+              'issueSameIdentityPair': live.count('issueSameIdentityPair'),
+              'expired scenario': live.count('CommitScenario::expired_capability'),
+              'concurrent distinct': live.count('CommitScenario::concurrent_distinct_same_version'),
+          }
+          print(counts)
+          assert counts['mesh.impl_'] == 15
+          assert counts['advanceAuthorityVersion'] == 0
+          assert counts['live stale scenario'] == 0
+          assert counts['header stale scenario'] == 0
+          assert counts['executable stale scenario'] == 0
+          assert counts['issueCapability definition'] == 1
+          assert counts['issueSameIdentityPair'] == 2
+          assert counts['expired scenario'] == 1
+          assert counts['concurrent distinct'] == 1
+          assert 'CommitResult::stale_state' in live
+          PY
+          test -z "$(git diff 3309575119ca2048e4343fefbd750d868ba57f4b..HEAD -- src include cmake CMakeLists.txt)"
