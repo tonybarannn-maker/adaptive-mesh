@@ -1,7 +1,7 @@
 #include "internal/production_transition_evaluator_live_scenarios.hpp"
 #include "internal/production_transition_eligibility_test_access.hpp"
 
-#include "detail/spatial_adaptive_mesh_impl.hpp"
+#include "detail/spatial_adaptive_mesh_internal_access.hpp"
 
 #include <array>
 #include <atomic>
@@ -76,18 +76,15 @@ class ProductionTransitionEvaluatorScenarioAccess final {
 
     static SnapshotCaptureResult capture(
         SpatialAdaptiveMesh& mesh, std::size_t source, std::size_t target) {
-        SpatialAdaptiveMesh::Impl::LiveProductionTransitionEvaluationBackend backend{*mesh.impl_};
-        const auto resolution = backend.resolveCurrentRelationship({source, target});
-        return backend.captureSnapshot(*resolution.relationship());
+        return SpatialAdaptiveMeshInternalAccess::captureProductionSnapshot(
+            mesh, source, target);
     }
 
     static FinalRevalidationOutcome revalidate(
         SpatialAdaptiveMesh& mesh,
         const CoherentProductionTransitionSnapshot& snapshot) {
-        SpatialAdaptiveMesh::Impl::LiveProductionTransitionEvaluationBackend backend{*mesh.impl_};
-        const ProductionDerivedDirection direction{
-            RequestedTransitionDirection::support, snapshot.lineage()};
-        return backend.revalidate(snapshot, direction);
+        return SpatialAdaptiveMeshInternalAccess::revalidateProductionSnapshot(
+            mesh, snapshot);
     }
 
     static BridgePolicyEvidence supportEvidence() {
