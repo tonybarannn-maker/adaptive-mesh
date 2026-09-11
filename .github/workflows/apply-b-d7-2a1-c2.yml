@@ -1,0 +1,395 @@
+name: apply-b-d7-2a1-c2
+
+on:
+  push:
+    branches:
+      - automation/apply-b-d7-2a1-c2
+
+permissions:
+  contents: write
+
+jobs:
+  apply-test-push:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout implementation branch
+        uses: actions/checkout@v4
+        with:
+          ref: implementation/wave-b-d7-2a-1-publication-transaction
+          fetch-depth: 0
+
+      - name: Assert exact Commit 1 base
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "4d8b6edddfe7fc81a2270bc5dde4207ec1f2dbf8"
+          test -z "$(git status --porcelain)"
+
+      - name: Apply proof facade and tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(source, old, new):
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected one match, got {count}: {old[:100]!r}')
+              return source.replace(old, new, 1)
+
+          access = Path('src/detail/spatial_adaptive_mesh_internal_access.hpp')
+          text = access.read_text()
+          text = replace_once(text, '#include "detail/spatial_adaptive_mesh_impl.hpp"\n', '#include "detail/spatial_adaptive_mesh_impl.hpp"\n\n#include <utility>\n')
+          marker = '''    [[nodiscard]] static FinalRevalidationOutcome revalidateProductionSnapshot(\n        SpatialAdaptiveMesh& mesh,\n        const CoherentProductionTransitionSnapshot& snapshot)\n    {\n        SpatialAdaptiveMesh::Impl::LiveProductionTransitionEvaluationBackend\n            backend{*mesh.impl_};\n        const auto request = BackendFactoryAccess::supportRequest(snapshot);\n        const auto& direction = request.direction();\n        if (!direction) return FinalRevalidationOutcome::unavailable_or_failed;\n        return backend.revalidate(snapshot, *direction);\n    }\n'''
+          insertion = marker + '''\n    [[nodiscard]] static auto prepareD7Publication(\n        SpatialAdaptiveMesh& mesh,\n        const ProductionTransitionEvaluationLocator& locator,\n        const ProductionD7PublicationInput& input)\n    {\n        return mesh.impl_->prepareD7Publication(locator, input);\n    }\n\n    [[nodiscard]] static ProductionD7PublicationCommitStatus commitD7Publication(\n        SpatialAdaptiveMesh& mesh,\n        SpatialAdaptiveMesh::Impl::PreparedD7PublicationTransaction&& transaction)\n    {\n        return mesh.impl_->commitD7Publication(std::move(transaction));\n    }\n'''
+          text = replace_once(text, marker, insertion)
+          access.write_text(text)
+
+          tests = Path('tests/production_persistence_tests.cpp')
+          text = tests.read_text()
+          insert_before_namespace_end = '''void testD7PublicationSnapshotCoherence() {\n'''
+          # Keep existing function in place; append new tests just before namespace close.
+          marker = '''}\n\n} // namespace\n\nint main() {\n'''
+          new_tests = r'''}
+
+bool sameRelationship(
+    const detail::CapturedRelationshipIdentity& lhs,
+    const detail::CapturedRelationshipIdentity& rhs) noexcept {
+    return lhs.sourceNodeId() == rhs.sourceNodeId() &&
+           lhs.targetNodeId() == rhs.targetNodeId() &&
+           lhs.generation() == rhs.generation() &&
+           lhs.sourceNodeIncarnation() == rhs.sourceNodeIncarnation() &&
+           lhs.targetNodeIncarnation() == rhs.targetNodeIncarnation();
+}
+
+bool sameCoherentPublicationState(
+    const detail::CoherentProductionTransitionSnapshot& lhs,
+    const detail::CoherentProductionTransitionSnapshot& rhs) noexcept {
+    return sameRelationship(lhs.relationship(), rhs.relationship()) &&
+           lhs.lineage() == rhs.lineage() &&
+           lhs.d7PublicationStatus() == rhs.d7PublicationStatus() &&
+           lhs.d7PublicationLineage() == rhs.d7PublicationLineage() &&
+           lhs.persistenceState() == rhs.persistenceState() &&
+           lhs.persistenceLineage() == rhs.persistenceLineage();
+}
+
+void addConnectedPair(SpatialAdaptiveMesh& mesh) {
+    mesh.addNode(0, {0.0, 0.0, 0.0}, 1.0);
+    mesh.addNode(1, {1.0, 0.0, 0.0}, 1.0);
+    mesh.connectNodes(0, 1);
+}
+
+void testBridgePersistenceInterruptPendingPrimitives() {
+    BridgePersistence pending(0.5, 0.25, 2, 2);
+    const auto initial = detail::ProductionPersistenceAccess::state(pending);
+    static_cast<void>(detail::ProductionPersistenceAccess::evolve(
+        pending, supportEvidence()));
+    const auto beforeInterrupt = detail::ProductionPersistenceAccess::state(pending);
+    require(beforeInterrupt.consecutiveSamples == 1);
+    require(beforeInterrupt.pendingDirection != initial.pendingDirection);
+    require(beforeInterrupt.recommendation ==
+        static_cast<std::uint8_t>(PersistentBridgeRecommendation::PRESERVE));
+    require(detail::ProductionPersistenceAccess::interruptPending(pending));
+    const auto afterInterrupt = detail::ProductionPersistenceAccess::state(pending);
+    require(afterInterrupt.consecutiveSamples == 0);
+    require(afterInterrupt.pendingDirection == initial.pendingDirection);
+    require(afterInterrupt.recommendation ==
+        static_cast<std::uint8_t>(PersistentBridgeRecommendation::PRESERVE));
+
+    BridgePersistence stable(0.5, 0.25, 2, 2);
+    static_cast<void>(detail::ProductionPersistenceAccess::evolve(
+        stable, supportEvidence()));
+    static_cast<void>(detail::ProductionPersistenceAccess::evolve(
+        stable, supportEvidence()));
+    const auto stableBefore = detail::ProductionPersistenceAccess::state(stable);
+    require(stableBefore.consecutiveSamples == 0);
+    require(stableBefore.recommendation ==
+        static_cast<std::uint8_t>(PersistentBridgeRecommendation::SUPPORT));
+    require(!detail::ProductionPersistenceAccess::interruptPending(stable));
+    require(detail::ProductionPersistenceAccess::state(stable) == stableBefore);
+}
+
+void testProductionD7PublicationCasAxesPure() {
+    SpatialAdaptiveMesh mesh;
+    addConnectedPair(mesh);
+    const auto forwardResult =
+        detail::SpatialAdaptiveMeshInternalAccess::captureProductionSnapshot(
+            mesh, 0, 1);
+    const auto reverseResult =
+        detail::SpatialAdaptiveMeshInternalAccess::captureProductionSnapshot(
+            mesh, 1, 0);
+    require(forwardResult.snapshot().has_value());
+    require(reverseResult.snapshot().has_value());
+    const auto& forward = *forwardResult.snapshot();
+    const auto& reverse = *reverseResult.snapshot();
+
+    const detail::ProductionD7PublicationCasState base{
+        forward.relationship(),
+        forward.lineage(),
+        forward.d7PublicationLineage(),
+        forward.persistenceLineage()};
+    const detail::ProductionD7PublicationCasState exact{
+        forward.relationship(),
+        forward.lineage(),
+        forward.d7PublicationLineage(),
+        forward.persistenceLineage()};
+    require(detail::publicationCasMatches(base, exact));
+
+    const detail::ProductionD7PublicationCasState identityMismatch{
+        reverse.relationship(),
+        forward.lineage(),
+        forward.d7PublicationLineage(),
+        forward.persistenceLineage()};
+    require(!detail::publicationCasMatches(base, identityMismatch));
+
+    const detail::ProductionD7PublicationCasState contextMismatch{
+        forward.relationship(),
+        forward.lineage() + 1,
+        forward.d7PublicationLineage(),
+        forward.persistenceLineage()};
+    require(!detail::publicationCasMatches(base, contextMismatch));
+
+    const detail::ProductionD7PublicationRecord distinctPublication;
+    const detail::ProductionD7PublicationCasState d7Mismatch{
+        forward.relationship(),
+        forward.lineage(),
+        distinctPublication.lineage(),
+        forward.persistenceLineage()};
+    require(!detail::publicationCasMatches(base, d7Mismatch));
+
+    require(reverse.persistenceLineage() != forward.persistenceLineage());
+    const detail::ProductionD7PublicationCasState persistenceMismatch{
+        forward.relationship(),
+        forward.lineage(),
+        forward.d7PublicationLineage(),
+        reverse.persistenceLineage()};
+    require(!detail::publicationCasMatches(base, persistenceMismatch));
+}
+
+void testLiveD7AuthoritativePublicationAdvancesLineage() {
+    SpatialAdaptiveMesh mesh;
+    addConnectedPair(mesh);
+    const auto beforeResult =
+        detail::SpatialAdaptiveMeshInternalAccess::captureProductionSnapshot(
+            mesh, 0, 1);
+    require(beforeResult.snapshot().has_value());
+    const auto before = *beforeResult.snapshot();
+
+    auto prepared = detail::SpatialAdaptiveMeshInternalAccess::prepareD7Publication(
+        mesh,
+        ProductionTransitionEvaluationLocator{0, 1},
+        detail::ProductionD7PublicationInput::authoritative(supportEvidence()));
+    require(prepared.has_value());
+    require(
+        detail::SpatialAdaptiveMeshInternalAccess::commitD7Publication(
+            mesh, std::move(*prepared)) ==
+        detail::ProductionD7PublicationCommitStatus::committed);
+
+    const auto afterResult =
+        detail::SpatialAdaptiveMeshInternalAccess::captureProductionSnapshot(
+            mesh, 0, 1);
+    require(afterResult.snapshot().has_value());
+    const auto& after = *afterResult.snapshot();
+    require(after.d7PublicationStatus() ==
+        detail::ProductionD7PublicationStatus::authoritative);
+    require(after.d7PublicationLineage() != before.d7PublicationLineage());
+    require(after.persistenceLineage() != before.persistenceLineage());
+    require(after.persistenceState().consecutiveSamples == 1);
+    require(after.persistenceState().recommendation ==
+        static_cast<std::uint8_t>(PersistentBridgeRecommendation::PRESERVE));
+}
+
+void testLiveD7UnavailablePendingMatrix() {
+    {
+        SpatialAdaptiveMesh mesh;
+        addConnectedPair(mesh);
+        auto support = detail::SpatialAdaptiveMeshInternalAccess::prepareD7Publication(
+            mesh,
+            ProductionTransitionEvaluationLocator{0, 1},
+            detail::ProductionD7PublicationInput::authoritative(supportEvidence()));
+        require(support.has_value());
+        require(
+            detail::SpatialAdaptiveMeshInternalAccess::commitD7Publication(
+                mesh, std::move(*support)) ==
+            detail::ProductionD7PublicationCommitStatus::committed);
+        const auto pendingResult =
+            detail::SpatialAdaptiveMeshInternalAccess::captureProductionSnapshot(
+                mesh, 0, 1);
+        require(pendingResult.snapshot().has_value());
+        const auto pending = *pendingResult.snapshot();
+        require(pending.persistenceState().consecutiveSamples == 1);
+
+        auto unavailable = detail::SpatialAdaptiveMeshInternalAccess::prepareD7Publication(
+            mesh,
+            ProductionTransitionEvaluationLocator{0, 1},
+            detail::ProductionD7PublicationInput::unavailable());
+        require(unavailable.has_value());
+        require(
+            detail::SpatialAdaptiveMeshInternalAccess::commitD7Publication(
+                mesh, std::move(*unavailable)) ==
+            detail::ProductionD7PublicationCommitStatus::committed);
+        const auto afterResult =
+            detail::SpatialAdaptiveMeshInternalAccess::captureProductionSnapshot(
+                mesh, 0, 1);
+        require(afterResult.snapshot().has_value());
+        const auto& after = *afterResult.snapshot();
+        require(after.d7PublicationStatus() ==
+            detail::ProductionD7PublicationStatus::unavailable);
+        require(after.d7PublicationLineage() != pending.d7PublicationLineage());
+        require(after.persistenceLineage() != pending.persistenceLineage());
+        require(after.persistenceState().consecutiveSamples == 0);
+        require(after.persistenceState().recommendation ==
+            static_cast<std::uint8_t>(PersistentBridgeRecommendation::PRESERVE));
+    }
+
+    {
+        SpatialAdaptiveMesh mesh;
+        addConnectedPair(mesh);
+        for (int i = 0; i < 2; ++i) {
+            auto support = detail::SpatialAdaptiveMeshInternalAccess::prepareD7Publication(
+                mesh,
+                ProductionTransitionEvaluationLocator{0, 1},
+                detail::ProductionD7PublicationInput::authoritative(supportEvidence()));
+            require(support.has_value());
+            require(
+                detail::SpatialAdaptiveMeshInternalAccess::commitD7Publication(
+                    mesh, std::move(*support)) ==
+                detail::ProductionD7PublicationCommitStatus::committed);
+        }
+        const auto stableResult =
+            detail::SpatialAdaptiveMeshInternalAccess::captureProductionSnapshot(
+                mesh, 0, 1);
+        require(stableResult.snapshot().has_value());
+        const auto stable = *stableResult.snapshot();
+        require(stable.persistenceState().consecutiveSamples == 0);
+        require(stable.persistenceState().recommendation ==
+            static_cast<std::uint8_t>(PersistentBridgeRecommendation::SUPPORT));
+
+        auto unavailable = detail::SpatialAdaptiveMeshInternalAccess::prepareD7Publication(
+            mesh,
+            ProductionTransitionEvaluationLocator{0, 1},
+            detail::ProductionD7PublicationInput::unavailable());
+        require(unavailable.has_value());
+        require(
+            detail::SpatialAdaptiveMeshInternalAccess::commitD7Publication(
+                mesh, std::move(*unavailable)) ==
+            detail::ProductionD7PublicationCommitStatus::committed);
+        const auto afterResult =
+            detail::SpatialAdaptiveMeshInternalAccess::captureProductionSnapshot(
+                mesh, 0, 1);
+        require(afterResult.snapshot().has_value());
+        const auto& after = *afterResult.snapshot();
+        require(after.d7PublicationStatus() ==
+            detail::ProductionD7PublicationStatus::unavailable);
+        require(after.d7PublicationLineage() != stable.d7PublicationLineage());
+        require(after.persistenceLineage() == stable.persistenceLineage());
+        require(after.persistenceState() == stable.persistenceState());
+    }
+}
+
+void testLiveD7DeterministicLostUpdateZeroMutation() {
+    SpatialAdaptiveMesh mesh;
+    addConnectedPair(mesh);
+    auto prepT1 = detail::SpatialAdaptiveMeshInternalAccess::prepareD7Publication(
+        mesh,
+        ProductionTransitionEvaluationLocator{0, 1},
+        detail::ProductionD7PublicationInput::authoritative(constrainEvidence()));
+    auto prepT2 = detail::SpatialAdaptiveMeshInternalAccess::prepareD7Publication(
+        mesh,
+        ProductionTransitionEvaluationLocator{0, 1},
+        detail::ProductionD7PublicationInput::authoritative(supportEvidence()));
+    require(prepT1.has_value());
+    require(prepT2.has_value());
+
+    require(
+        detail::SpatialAdaptiveMeshInternalAccess::commitD7Publication(
+            mesh, std::move(*prepT2)) ==
+        detail::ProductionD7PublicationCommitStatus::committed);
+    const auto afterT2Result =
+        detail::SpatialAdaptiveMeshInternalAccess::captureProductionSnapshot(
+            mesh, 0, 1);
+    require(afterT2Result.snapshot().has_value());
+    const auto afterT2 = *afterT2Result.snapshot();
+
+    require(
+        detail::SpatialAdaptiveMeshInternalAccess::commitD7Publication(
+            mesh, std::move(*prepT1)) ==
+        detail::ProductionD7PublicationCommitStatus::stale_acquisition);
+    const auto afterT1Result =
+        detail::SpatialAdaptiveMeshInternalAccess::captureProductionSnapshot(
+            mesh, 0, 1);
+    require(afterT1Result.snapshot().has_value());
+    const auto& afterT1 = *afterT1Result.snapshot();
+    require(sameCoherentPublicationState(afterT2, afterT1));
+}
+
+} // namespace
+
+int main() {
+'''
+          text = replace_once(text, marker, new_tests)
+          main_marker = '''    testD7PublicationSnapshotCoherence();\n    return EXIT_SUCCESS;\n}'''
+          main_new = '''    testD7PublicationSnapshotCoherence();\n    testBridgePersistenceInterruptPendingPrimitives();\n    testProductionD7PublicationCasAxesPure();\n    testLiveD7AuthoritativePublicationAdvancesLineage();\n    testLiveD7UnavailablePendingMatrix();\n    testLiveD7DeterministicLostUpdateZeroMutation();\n    return EXIT_SUCCESS;\n}'''
+          text = replace_once(text, main_marker, main_new)
+          tests.write_text(text)
+          PY
+
+      - name: Assert Commit 2 perimeter
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git status --short | wc -l)" -eq 2
+          git status --short
+          git diff --exit-code 4d8b6edddfe7fc81a2270bc5dde4207ec1f2dbf8 -- include cmake/templates CMakeLists.txt
+
+      - name: Configure
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTS=ON \
+            -DBUILD_BENCHMARKS=ON \
+            -DBUILD_EXAMPLES=ON \
+            -DSOAM_WARNINGS_AS_ERRORS=ON
+
+      - name: Registered tests and frozen proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          ctest --test-dir build -N | tee /tmp/ctest-list.txt
+          grep -F 'Total Tests: 28' /tmp/ctest-list.txt
+          ctest --test-dir build -R '^proof_token_delta_v0$' --output-on-failure
+
+      - name: Build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build build --parallel 2
+
+      - name: Full current suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          ctest --test-dir build --output-on-failure
+
+      - name: Structural gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(grep -o 'mesh\.impl_' tests/support/production_transition_evaluator_live_scenarios.cpp | wc -l)" -eq 15
+          git diff --exit-code 4d8b6edddfe7fc81a2270bc5dde4207ec1f2dbf8 -- include cmake/templates CMakeLists.txt
+          ! git diff 4d8b6edddfe7fc81a2270bc5dde4207ec1f2dbf8 -- src/detail/spatial_adaptive_mesh_impl.hpp | grep -E '^\+.*(evolve|interruptPending|publishDetached).*lifecycle'
+
+      - name: Commit and push proof coverage
+        env:
+          TARGET_BRANCH: implementation/wave-b-d7-2a-1-publication-transaction
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/detail/spatial_adaptive_mesh_internal_access.hpp tests/production_persistence_tests.cpp
+          git commit -m 'test: prove D7 optimistic publication transaction'
+          git push origin "HEAD:${TARGET_BRANCH}"
