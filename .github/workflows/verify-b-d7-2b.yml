@@ -1,0 +1,102 @@
+name: verify-b-d7-2b
+
+on:
+  push:
+    branches:
+      - verification/b-d7-2b-972445f7
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact implementation SHA
+        uses: actions/checkout@v4
+        with:
+          ref: 972445f7f7651c71ea23fc893998792c68b7be51
+          fetch-depth: 0
+
+      - name: Assert exact SHA and clean tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "972445f7f7651c71ea23fc893998792c68b7be51"
+          test -z "$(git status --porcelain)"
+
+      - name: Toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --version
+          c++ --version
+          python3 --version
+          ninja --version
+
+      - name: Configure
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTS=ON \
+            -DBUILD_BENCHMARKS=ON \
+            -DBUILD_EXAMPLES=ON \
+            -DSOAM_WARNINGS_AS_ERRORS=ON
+
+      - name: Registered test count
+        shell: bash
+        run: |
+          set -euo pipefail
+          ctest --test-dir build -N | tee /tmp/ctest-list.txt
+          grep -F "Total Tests: 28" /tmp/ctest-list.txt
+          grep -F "proof_token_delta_v0" /tmp/ctest-list.txt
+
+      - name: Frozen token-delta proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          ctest --test-dir build -R '^proof_token_delta_v0$' --output-on-failure
+
+      - name: Build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build build --parallel 2
+
+      - name: Full CTest
+        shell: bash
+        run: |
+          set -euo pipefail
+          ctest --test-dir build --output-on-failure
+
+      - name: Install sanity
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf stage
+          cmake --install build --prefix "$PWD/stage"
+          test -f stage/include/system_architecture.hpp
+          test -f stage/include/production_transition_evaluator.hpp
+          test -f stage/lib/cmake/AdaptiveMesh/AdaptiveMeshConfig.cmake
+          test ! -e stage/tests/proofs/token_delta_v0.py
+
+      - name: Structural gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(grep -o 'mesh\.impl_' tests/support/production_transition_evaluator_live_scenarios.cpp | wc -l)" -eq 15
+          git diff --exit-code be9c2c09df0a231ec6979bdb2ac7279df543af54..HEAD -- include cmake/templates CMakeLists.txt
+          test "$(git diff --name-only be9c2c09df0a231ec6979bdb2ac7279df543af54..HEAD | wc -l)" -eq 3
+          grep -F 'static PersistentBridgeRecommendation recommendation(' src/detail/production_transition_evaluation_internal.hpp
+          grep -F 'static RequestDerivationResult deriveCapturedDirection(' src/detail/production_transition_evaluation_internal.hpp
+          grep -F 'ProductionD7PublicationStatus::authoritative' src/detail/production_transition_evaluation_internal.hpp
+          grep -F 'PersistentBridgeRecommendation::PRESERVE' src/detail/production_transition_evaluation_internal.hpp
+          grep -F 'PersistentBridgeRecommendation::CONSTRAIN' src/detail/production_transition_evaluation_internal.hpp
+          grep -F 'PersistentBridgeRecommendation::SUPPORT' src/detail/production_transition_evaluation_internal.hpp
+          grep -F 'return deriveCapturedDirection(snapshot);' src/detail/spatial_adaptive_mesh_impl.hpp
+          if grep -A14 -F 'deriveDirection(' src/detail/spatial_adaptive_mesh_impl.hpp | grep -F 'topologyMutex'; then
+            echo 'deriveDirection still performs live topology read' >&2
+            exit 1
+          fi
