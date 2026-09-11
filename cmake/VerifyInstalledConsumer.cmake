@@ -13,3 +13,9 @@ file(GLOB_RECURSE scenario_artifacts
 if(scenario_artifacts)
   message(FATAL_ERROR "Test-only artifacts escaped into install: ${scenario_artifacts}")
 endif()
+file(GLOB_RECURSE profile_artifacts
+  "${INSTALL_PREFIX}/*adaptive_mesh_profile*"
+  "${INSTALL_PREFIX}/*simulation_phase_profile*")
+if(profile_artifacts)
+  message(FATAL_ERROR "Profile-only artifacts escaped into install: ${profile_artifacts}")
+endif()
