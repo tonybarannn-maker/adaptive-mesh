@@ -1,0 +1,55 @@
+name: Verify A.1a-2.2d exact SHA
+
+on:
+  push:
+    branches: [verification/a1a22d-88e93aed]
+
+jobs:
+  verify-exact-sha:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact A.1a-2.2d SHA
+        uses: actions/checkout@v4
+        with:
+          ref: 88e93aed57444b58e57969d4ae28195fe66097de
+          fetch-depth: 0
+      - name: Assert exact SHA and clean tree
+        run: |
+          test "$(git rev-parse HEAD)" = "88e93aed57444b58e57969d4ae28195fe66097de"
+          git diff --exit-code
+          git diff --cached --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"
+      - name: Configure Release warnings-as-errors
+        run: cmake -S . -B build-a1a22d -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DBUILD_BENCHMARKS=ON -DBUILD_EXAMPLES=ON -DSOAM_WARNINGS_AS_ERRORS=ON
+      - name: Build all configured targets
+        run: cmake --build build-a1a22d --parallel 2
+      - name: Verify registered test count
+        run: |
+          ctest --test-dir build-a1a22d -N | tee build-a1a22d/ctest-list.txt
+          grep -q '^Total Tests: 27$' build-a1a22d/ctest-list.txt
+      - name: Commit scenario integration tests
+        run: ctest --test-dir build-a1a22d -R 'production_transition_commit_tests' --output-on-failure
+      - name: Full CTest
+        run: ctest --test-dir build-a1a22d --output-on-failure
+      - name: Install sanity
+        run: |
+          cmake --install build-a1a22d --prefix "$PWD/stage"
+          test ! -e stage/include/tests/support/production_transition_evaluator_live_scenarios.cpp
+          test ! -e stage/include/detail/spatial_adaptive_mesh_internal_access.hpp
+      - name: Structural assertion decomposition gates
+        run: |
+          FILE=tests/support/production_transition_evaluator_live_scenarios.cpp
+          test "$(grep -c 'static ProductionCapabilityLifecycleState lifecycleState' "$FILE" || true)" = "0"
+          test "$(grep -c 'CommitBridgeState' "$FILE" || true)" = "0"
+          test "$(grep -c 'after.capacity' "$FILE" || true)" = "0"
+          test "$(grep -c 'after.version' "$FILE" || true)" = "0"
+          test "$(grep -c 'committedBridgeStatus' "$FILE")" = "2"
+          grep -q 'BridgeStatus::DAMPING' "$FILE"
+          grep -q 'CommitResult::target_mismatch' "$FILE"
+          grep -q 'CommitResult::stale_state' "$FILE"
+          grep -q 'CommitResult::capability_consumed' "$FILE"
+          grep -q 'CommitResult::transition_rejected' "$FILE"
+          grep -q 'CommitResult::capability_invalid' "$FILE"
+          test "$(grep -c 'static ProductionExecutionCapability issueCapability' "$FILE")" = "1"
+          test "$(grep -c 'issueSameIdentityPair' "$FILE")" = "2"
+          test -z "$(git diff d2fa996d8d45277d4cba7946649f163e218df59f..HEAD -- src include cmake CMakeLists.txt)"
