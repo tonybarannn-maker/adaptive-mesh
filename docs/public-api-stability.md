@@ -131,12 +131,25 @@ generated header does not make them public extension points.
 `requireFinite()` is an internal runtime validation helper despite its current
 namespace-level visibility and is not a supported consumer API.
 
-`SOAM_PHASE_PROFILE_ENABLED`, `SimulationPhaseProfile`, and
-`getLastSimulationPhaseProfile()` are build-owned profile configuration
-surfaces, not supported normal consumer API. Scenario friendship,
-scenario-generated declarations, scenario support, tests, benchmarks,
-experiments, and `src/detail` declarations are internal/test-only and are not
-installed or exported.
+Phase profiling is build-owned diagnostic instrumentation. The public
+`SpatialAdaptiveMesh` declaration is configuration-invariant between the normal
+and profile runtimes; profile data is exposed only through the internal
+`src/detail` profile accessor used by repository benchmarks and tests.
+`adaptive_mesh_profile`, its profile record/accessor, profile compile definition,
+profile benchmarks, and profile validity semantics are internal/test-only. The
+profile runtime is not installed or exported, and no profile-only declaration is
+part of the supported normal consumer API.
+
+A profile measurement is current only after a simulation step completes
+successfully. Profile state is invalidated at step entry, an empty step publishes
+no measurement, and a failed step leaves no current measurement. Timing fields
+must correspond to actual measured work; in particular, commit timing covers the
+state/health/bridge publication region. There is no synthetic post-validation
+field when no post-validation work exists.
+
+Scenario friendship, scenario-generated declarations, scenario support, tests,
+benchmarks, experiments, and `src/detail` declarations are internal/test-only
+and are not installed or exported.
 
 Consumer-defined macros cannot select profile or scenario access topology.
 
