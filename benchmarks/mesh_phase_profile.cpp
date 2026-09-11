@@ -1,4 +1,5 @@
 #include "system_architecture.hpp"
+#include "detail/simulation_diagnostics.hpp"
 
 #include <cmath>
 #include <cstdlib>
@@ -64,7 +65,10 @@ struct PhaseTotals {
     double postValidationMicroseconds = 0.0;
 };
 
-void accumulate(PhaseTotals& totals, const AdaptiveMesh::SimulationPhaseProfile& profile) {
+void accumulate(
+    PhaseTotals& totals,
+    const AdaptiveMesh::SimulationPhaseProfile& profile)
+{
     totals.preValidationMicroseconds += profile.preValidationMicroseconds;
     totals.workerPoolReadyMicroseconds += profile.workerPoolReadyMicroseconds;
     totals.bufferPreparationMicroseconds += profile.bufferPreparationMicroseconds;
@@ -104,7 +108,10 @@ int main() {
                     PhaseTotals totals{};
                     for (size_t step = 0; step < measuredSteps; ++step) {
                         mesh.simulationStep();
-                        accumulate(totals, mesh.getLastSimulationPhaseProfile());
+                        accumulate(
+                            totals,
+                            AdaptiveMesh::detail::SimulationDiagnosticsAccess::
+                                simulationProfile(mesh));
                     }
 
                     const double divisor = static_cast<double>(measuredSteps);
