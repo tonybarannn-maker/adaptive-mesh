@@ -1,6 +1,9 @@
 #include "detail/spatial_adaptive_mesh_impl.hpp"
 #include "detail/production_authority_internal.hpp"
 #include "production_authority_policy.hpp"
+#if SOAM_PHASE_PROFILE_ENABLED
+#include "detail/simulation_phase_profile.hpp"
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -240,8 +243,11 @@ double SpatialAdaptiveMesh::getNodeHealth(std::size_t id) const { return impl_->
 std::size_t SpatialAdaptiveMesh::getNodeBridgesCount(std::size_t id) const { return impl_->getNodeBridgesCount(id); }
 
 #if SOAM_PHASE_PROFILE_ENABLED
-SimulationPhaseProfile SpatialAdaptiveMesh::getLastSimulationPhaseProfile() const {
-    return impl_->getLastSimulationPhaseProfile();
+std::optional<detail::SimulationPhaseProfile>
+detail::SimulationPhaseProfileAccessor::current(
+    const SpatialAdaptiveMesh& mesh)
+{
+    return mesh.impl_->currentSimulationPhaseProfile();
 }
 #endif
 
