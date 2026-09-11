@@ -1,0 +1,57 @@
+name: Verify A.1a-1.5 exact SHA
+
+on:
+  push:
+    branches:
+      - verification/a1a15-35156b96
+
+jobs:
+  verify-exact-sha:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact A.1a-1.5 SHA
+        uses: actions/checkout@v4
+        with:
+          ref: 35156b96a745b618025846dd72e62d4279278405
+          fetch-depth: 0
+      - name: Assert exact SHA and clean tree
+        run: |
+          test "$(git rev-parse HEAD)" = "35156b96a745b618025846dd72e62d4279278405"
+          git diff --exit-code
+          git diff --cached --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"
+      - name: Configure Release warnings-as-errors
+        run: >-
+          cmake -S . -B build-a1a15 -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_TESTS=ON
+          -DBUILD_BENCHMARKS=ON
+          -DBUILD_EXAMPLES=ON
+          -DSOAM_WARNINGS_AS_ERRORS=ON
+      - name: Build standalone binding gate
+        run: cmake --build build-a1a15 --target production_transition_evaluation_binding_tests --parallel 2
+      - name: Run standalone binding gate
+        run: ctest --test-dir build-a1a15 -R '^run_production_transition_evaluation_binding_tests$' --output-on-failure
+      - name: Build all configured targets
+        run: cmake --build build-a1a15 --parallel 2
+      - name: Verify registered test count
+        run: |
+          ctest --test-dir build-a1a15 -N | tee build-a1a15/ctest-list.txt
+          grep -q '^Total Tests: 27$' build-a1a15/ctest-list.txt
+      - name: Full CTest
+        run: ctest --test-dir build-a1a15 --output-on-failure
+      - name: Install sanity
+        run: |
+          cmake --install build-a1a15 --prefix "$PWD/stage"
+          test ! -e stage/include/detail/production_transition_evaluator_binding_access.hpp
+          test ! -e stage/include/detail/production_transition_evaluation_internal.hpp
+          ! grep -q 'class ProductionTransitionEvaluatorBindingAccess final' stage/include/production_transition_evaluator.hpp
+      - name: Structural invariants
+        run: |
+          git diff --exit-code d4cf020236ef048d2181a2c9581d5727507de0e5 -- src/detail/spatial_adaptive_mesh_internal_access.hpp
+          test -z "$(git grep -n 'SOAM_BINDING_ACCESS_SCENARIO_FRIEND' -- . || true)"
+          ! grep -q 'class ProductionTransitionEvaluatorBindingAccess final' cmake/templates/production_transition_evaluator.hpp.in
+          grep -q 'class ProductionTransitionEvaluatorBindingAccess final' src/detail/production_transition_evaluator_binding_access.hpp
+          test -z "$(git grep -n 'ProductionTransitionEvaluatorScenarioAccess' -- tests/production_transition_evaluation_binding_tests.cpp src/detail/production_transition_evaluator_binding_access.hpp || true)"
+          grep -q 'target_link_libraries(production_transition_evaluation_binding_tests PRIVATE adaptive_mesh)' CMakeLists.txt
+          ! grep -A6 'target_include_directories(production_transition_evaluation_binding_tests PRIVATE' CMakeLists.txt | grep -q 'SOAM_SCENARIO_INCLUDE_DIR'
