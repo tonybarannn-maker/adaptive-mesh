@@ -12,13 +12,12 @@ class SpatialAdaptiveMeshInternalAccess final {
             return snapshotCaptureFailed();
         }
 
-        [[nodiscard]] static ProductionDerivedDirection supportDirection(
+        [[nodiscard]] static RequestDerivationResult supportRequest(
             const CoherentProductionTransitionSnapshot& snapshot) noexcept
         {
-            const auto request = derivedRequest(
+            return derivedRequest(
                 snapshot,
                 RequestedTransitionDirection::support);
-            return *request.direction();
         }
     };
 
@@ -51,8 +50,10 @@ public:
     {
         SpatialAdaptiveMesh::Impl::LiveProductionTransitionEvaluationBackend
             backend{*mesh.impl_};
-        const auto direction = BackendFactoryAccess::supportDirection(snapshot);
-        return backend.revalidate(snapshot, direction);
+        const auto request = BackendFactoryAccess::supportRequest(snapshot);
+        const auto& direction = request.direction();
+        if (!direction) return FinalRevalidationOutcome::unavailable_or_failed;
+        return backend.revalidate(snapshot, *direction);
     }
 };
 
