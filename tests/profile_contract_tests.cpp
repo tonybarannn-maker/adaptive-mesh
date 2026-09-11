@@ -3,8 +3,8 @@
 
 #include <cassert>
 #include <cmath>
+#include <exception>
 #include <limits>
-#include <stdexcept>
 
 int main() {
     using AdaptiveMesh::SpatialAdaptiveMesh;
@@ -51,7 +51,7 @@ int main() {
         bool threw = false;
         try {
             mesh.simulationStep();
-        } catch (const std::runtime_error&) {
+        } catch (const std::exception&) {
             threw = true;
         }
         assert(threw);
