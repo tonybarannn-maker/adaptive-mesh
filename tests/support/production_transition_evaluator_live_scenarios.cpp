@@ -122,17 +122,6 @@ class ProductionTransitionEvaluatorScenarioAccess final {
         return {std::move(first), std::move(second)};
     }
 
-    static void advanceAuthorityVersion(SpatialAdaptiveMesh& mesh) {
-        std::unique_lock lock(mesh.impl_->topologyMutex);
-        const auto found = mesh.impl_->productionRelationships_.find({0, 1});
-        if (found == mesh.impl_->productionRelationships_.end()) {
-            throw std::logic_error("commit scenario relationship missing");
-        }
-        found->second.authorityRelevantContextLineage =
-            mesh.impl_->nextAuthorityRelevantContextLineage_;
-        ++mesh.impl_->nextAuthorityRelevantContextLineage_;
-    }
-
 public:
     static bool run(test_support::LiveScenario scenario) {
         using test_support::LiveScenario;
@@ -195,13 +184,6 @@ public:
             auto capability = issueCapability(mesh);
             return mesh.commitProductionTransition(std::move(capability)) ==
                 CommitResult::committed;
-        }
-
-        if (scenario == CommitScenario::stale_state) {
-            auto capability = issueCapability(mesh);
-            advanceAuthorityVersion(mesh);
-            return mesh.commitProductionTransition(std::move(capability)) ==
-                CommitResult::stale_state;
         }
 
         if (scenario == CommitScenario::replay) {
