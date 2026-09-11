@@ -1,3 +1,4 @@
+#include "detail/simulation_phase_profile.hpp"
 #include "detail/spatial_adaptive_mesh_impl.hpp"
 #include "detail/production_authority_internal.hpp"
 #include "production_authority_policy.hpp"
@@ -238,11 +239,5 @@ ProductionTransitionCommitResult SpatialAdaptiveMesh::commitProductionTransition
 double SpatialAdaptiveMesh::getNodeState(std::size_t id) const { return impl_->getNodeState(id); }
 double SpatialAdaptiveMesh::getNodeHealth(std::size_t id) const { return impl_->getNodeHealth(id); }
 std::size_t SpatialAdaptiveMesh::getNodeBridgesCount(std::size_t id) const { return impl_->getNodeBridgesCount(id); }
-
-#if SOAM_PHASE_PROFILE_ENABLED
-SimulationPhaseProfile SpatialAdaptiveMesh::getLastSimulationPhaseProfile() const {
-    return impl_->getLastSimulationPhaseProfile();
-}
-#endif
 
 } // namespace AdaptiveMesh
