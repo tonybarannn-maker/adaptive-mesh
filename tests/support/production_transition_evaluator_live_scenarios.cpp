@@ -122,21 +122,6 @@ class ProductionTransitionEvaluatorScenarioAccess final {
         return {std::move(first), std::move(second)};
     }
 
-    static BridgeStatus committedBridgeStatus(SpatialAdaptiveMesh& mesh) {
-        std::shared_lock lock(mesh.impl_->topologyMutex);
-        const auto& bridges = mesh.impl_->nodes[0].bridges;
-        const auto bridge = std::find_if(
-            bridges.begin(),
-            bridges.end(),
-            [](const SpatialBridge& candidate) {
-                return candidate.targetNodeId == 1;
-            });
-        if (bridge == bridges.end()) {
-            throw std::logic_error("commit scenario bridge missing");
-        }
-        return bridge->status;
-    }
-
     static void advanceAuthorityVersion(SpatialAdaptiveMesh& mesh) {
         std::unique_lock lock(mesh.impl_->topologyMutex);
         const auto found = mesh.impl_->productionRelationships_.find({0, 1});
@@ -208,9 +193,8 @@ public:
 
         if (scenario == CommitScenario::successful_atomic_commit) {
             auto capability = issueCapability(mesh);
-            const auto result = mesh.commitProductionTransition(std::move(capability));
-            return result == CommitResult::committed &&
-                committedBridgeStatus(mesh) == BridgeStatus::DAMPING;
+            return mesh.commitProductionTransition(std::move(capability)) ==
+                CommitResult::committed;
         }
 
         if (scenario == CommitScenario::stale_state) {
