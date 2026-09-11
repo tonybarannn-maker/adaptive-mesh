@@ -1,4 +1,5 @@
 #include "system_architecture.hpp"
+#include "detail/simulation_phase_profile.hpp"
 
 #include <cmath>
 #include <cstdlib>
@@ -61,17 +62,18 @@ struct PhaseTotals {
     double workerDispatchWaitMicroseconds = 0.0;
     double resultValidationMicroseconds = 0.0;
     double commitMicroseconds = 0.0;
-    double postValidationMicroseconds = 0.0;
 };
 
-void accumulate(PhaseTotals& totals, const AdaptiveMesh::SimulationPhaseProfile& profile) {
+void accumulate(
+    PhaseTotals& totals,
+    const AdaptiveMesh::detail::SimulationPhaseProfile& profile)
+{
     totals.preValidationMicroseconds += profile.preValidationMicroseconds;
     totals.workerPoolReadyMicroseconds += profile.workerPoolReadyMicroseconds;
     totals.bufferPreparationMicroseconds += profile.bufferPreparationMicroseconds;
     totals.workerDispatchWaitMicroseconds += profile.workerDispatchWaitMicroseconds;
     totals.resultValidationMicroseconds += profile.resultValidationMicroseconds;
     totals.commitMicroseconds += profile.commitMicroseconds;
-    totals.postValidationMicroseconds += profile.postValidationMicroseconds;
 }
 
 } // namespace
@@ -87,7 +89,7 @@ int main() {
         std::cout << "Adaptive Mesh simulation phase profile\n";
         std::cout << "warmup_steps=" << warmupSteps
                   << " measured_steps=" << measuredSteps << "\n";
-        std::cout << "topology,nodes,workers,pre_validation_us,worker_pool_ready_us,buffer_prep_us,worker_dispatch_wait_us,result_validation_us,commit_us,post_validation_us\n";
+        std::cout << "topology,nodes,workers,pre_validation_us,worker_pool_ready_us,buffer_prep_us,worker_dispatch_wait_us,result_validation_us,commit_us\n";
         std::cout << std::fixed << std::setprecision(3);
 
         for (const Topology topology : topologies) {
@@ -104,7 +106,13 @@ int main() {
                     PhaseTotals totals{};
                     for (size_t step = 0; step < measuredSteps; ++step) {
                         mesh.simulationStep();
-                        accumulate(totals, mesh.getLastSimulationPhaseProfile());
+                        const auto profile =
+                            AdaptiveMesh::detail::SimulationPhaseProfileAccessor::current(mesh);
+                        if (!profile.has_value()) {
+                            throw std::runtime_error(
+                                "completed profile step did not publish phase data");
+                        }
+                        accumulate(totals, *profile);
                     }
 
                     const double divisor = static_cast<double>(measuredSteps);
@@ -116,8 +124,7 @@ int main() {
                               << totals.bufferPreparationMicroseconds / divisor << ','
                               << totals.workerDispatchWaitMicroseconds / divisor << ','
                               << totals.resultValidationMicroseconds / divisor << ','
-                              << totals.commitMicroseconds / divisor << ','
-                              << totals.postValidationMicroseconds / divisor << '\n';
+                              << totals.commitMicroseconds / divisor << '\n';
                 }
             }
         }
