@@ -1,7 +1,5 @@
 #pragma once
 
-#define SOAM_PHASE_PROFILE_ENABLED @SOAM_PHASE_PROFILE_ENABLED@
-
 #include "production_authority_types.hpp"
 #include "production_transition_evaluator.hpp"
 
@@ -16,6 +14,7 @@ namespace AdaptiveMesh {
 
 namespace detail {
 @SOAM_SCENARIO_FORWARD_DECL@
+class SimulationPhaseProfileAccessor;
 }
 
 void requireFinite(double value, const char* name);
@@ -78,18 +77,6 @@ public:
     [[nodiscard]] double applyLocalReflexFilter(double rawInput) const;
 };
 
-#if SOAM_PHASE_PROFILE_ENABLED
-struct SimulationPhaseProfile {
-    double preValidationMicroseconds = 0.0;
-    double workerPoolReadyMicroseconds = 0.0;
-    double bufferPreparationMicroseconds = 0.0;
-    double workerDispatchWaitMicroseconds = 0.0;
-    double resultValidationMicroseconds = 0.0;
-    double commitMicroseconds = 0.0;
-    double postValidationMicroseconds = 0.0;
-};
-#endif
-
 class SpatialAdaptiveMesh {
 public:
     explicit SpatialAdaptiveMesh(std::size_t maxWorkers = 0);
@@ -116,15 +103,12 @@ public:
     [[nodiscard]] double getNodeHealth(std::size_t id) const;
     [[nodiscard]] std::size_t getNodeBridgesCount(std::size_t id) const;
 
-#if SOAM_PHASE_PROFILE_ENABLED
-    [[nodiscard]] SimulationPhaseProfile getLastSimulationPhaseProfile() const;
-#endif
-
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
 
     friend class detail::ProductionTransitionEvaluatorBindingAccess;
+    friend class detail::SimulationPhaseProfileAccessor;
 @SOAM_MESH_SCENARIO_FRIEND@
 };
 
