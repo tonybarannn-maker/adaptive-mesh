@@ -255,10 +255,12 @@ struct SpatialAdaptiveMesh::Impl {
                 const double reverse = nodes[target].position.orientationFactorTo(nodes[source].position);
                 pending.push_back({{source, target}, {b, distance, forward, 1.0, BridgeStatus::NORMAL},
                     {nodeIncarnations_.at(source), nodeIncarnations_.at(target),
-                     generation++, lineage++, detail::ProductionPersistenceRecord{}}});
+                     generation++, lineage++, detail::ProductionPersistenceRecord{},
+                     detail::ProductionD7PublicationRecord{}}});
                 pending.push_back({{target, source}, {a, distance, reverse, 1.0, BridgeStatus::NORMAL},
                     {nodeIncarnations_.at(target), nodeIncarnations_.at(source),
-                     generation++, lineage++, detail::ProductionPersistenceRecord{}}});
+                     generation++, lineage++, detail::ProductionPersistenceRecord{},
+                     detail::ProductionD7PublicationRecord{}}});
                 ++additions[source];
                 ++additions[target];
             }
