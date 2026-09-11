@@ -44,6 +44,16 @@ jobs:
       - name: Full suite
         run: ctest --test-dir build --output-on-failure
 
+      - name: Install sanity
+        run: |
+          set -euo pipefail
+          rm -rf stage
+          cmake --install build --prefix "$PWD/stage"
+          test -f stage/include/system_architecture.hpp
+          test -f stage/include/production_transition_evaluator.hpp
+          test -f stage/lib/cmake/AdaptiveMesh/AdaptiveMeshConfig.cmake
+          test ! -e stage/tests/proofs/token_delta_v0.py
+
       - name: Structural gates
         run: |
           set -euo pipefail
