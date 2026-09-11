@@ -18,6 +18,11 @@ class ProductionTransitionEvaluatorScenarioAccess final {
         std::uint64_t version;
     };
 
+    enum class PersistenceMutation {
+        evolve,
+        reset
+    };
+
     using EligibilityTestAccess = ProductionTransitionEligibilityTestAccess;
 
     static void populate(SpatialAdaptiveMesh& mesh) {
@@ -47,24 +52,24 @@ class ProductionTransitionEvaluatorScenarioAccess final {
             InteractionObservation(1.0), BridgeConfidence(1.0));
     }
 
-    static void evolve(
-        SpatialAdaptiveMesh& mesh, std::size_t source, std::size_t target) {
+    static void mutatePersistence(
+        SpatialAdaptiveMesh& mesh,
+        std::size_t source,
+        std::size_t target,
+        PersistenceMutation mutation) {
         std::unique_lock lock(mesh.impl_->topologyMutex);
         const auto found = mesh.impl_->productionRelationships_.find({source, target});
-        if (found != mesh.impl_->productionRelationships_.end()) {
+        if (found == mesh.impl_->productionRelationships_.end()) return;
+
+        if (mutation == PersistenceMutation::evolve) {
             static_cast<void>(ProductionPersistenceAccess::evolve(
                 found->second.persistence, supportEvidence()));
+            return;
         }
-    }
 
-    static void reset(SpatialAdaptiveMesh& mesh, std::size_t source, std::size_t target) {
-        std::unique_lock lock(mesh.impl_->topologyMutex);
-        const auto found = mesh.impl_->productionRelationships_.find({source, target});
-        if (found != mesh.impl_->productionRelationships_.end()) {
-            const bool changed = ProductionPersistenceAccess::reset(
-                found->second.persistence.persistence_);
-            if (changed) found->second.persistence.lineage_.advance();
-        }
+        const bool changed = ProductionPersistenceAccess::reset(
+            found->second.persistence.persistence_);
+        if (changed) found->second.persistence.lineage_.advance();
     }
 
     static ProductionExecutionCapability issueCapability(
@@ -188,21 +193,21 @@ public:
             return revalidate(mesh, *captured.snapshot()) == Outcome::revalidated;
         }
         if (scenario == LiveScenario::changed_persistence_stale) {
-            evolve(mesh, 0, 1);
+            mutatePersistence(mesh, 0, 1, PersistenceMutation::evolve);
             return revalidate(mesh, *captured.snapshot()) == Outcome::stale;
         }
         if (scenario == LiveScenario::persistence_anti_resurrection) {
-            evolve(mesh, 0, 1);
-            evolve(mesh, 0, 1);
-            reset(mesh, 0, 1);
+            mutatePersistence(mesh, 0, 1, PersistenceMutation::evolve);
+            mutatePersistence(mesh, 0, 1, PersistenceMutation::evolve);
+            mutatePersistence(mesh, 0, 1, PersistenceMutation::reset);
             return revalidate(mesh, *captured.snapshot()) == Outcome::stale;
         }
         if (scenario == LiveScenario::unrelated_relationship_isolation) {
-            evolve(mesh, 2, 3);
+            mutatePersistence(mesh, 2, 3, PersistenceMutation::evolve);
             return revalidate(mesh, *captured.snapshot()) == Outcome::revalidated;
         }
         if (scenario == LiveScenario::reverse_direction_isolation) {
-            evolve(mesh, 1, 0);
+            mutatePersistence(mesh, 1, 0, PersistenceMutation::evolve);
             return revalidate(mesh, *captured.snapshot()) == Outcome::revalidated;
         }
         return false;
