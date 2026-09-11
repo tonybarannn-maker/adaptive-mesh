@@ -41,6 +41,8 @@ jobs:
           production_transition_commit_tests production_transition_evaluator_live_compile_tests
           production_runtime_consumer_tests mesh_phase_profile mesh_benchmark mesh_scaling_sweep
           mesh_benchmark_profile adaptive_mesh_demo
+      - name: Build all configured targets
+        run: cmake --build build-a1a14 --parallel 2
       - name: Verify registered test count
         run: |
           ctest --test-dir build-a1a14 -N | tee build-a1a14/ctest-list.txt
