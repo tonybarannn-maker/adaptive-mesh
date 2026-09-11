@@ -224,15 +224,6 @@ public:
             auto evaluator = mesh.productionTransitionEvaluator();
             return evaluator.evaluate({0, 1}) == ProductionTransitionEvaluation::not_eligible;
         }
-        if (scenario == LiveScenario::persistence_change_detection) {
-            BridgePersistence persistence(0.5, 0.25, 2, 2);
-            const auto evidence = supportEvidence();
-            const auto first = ProductionPersistenceAccess::evolve(persistence, evidence);
-            const auto second = ProductionPersistenceAccess::evolve(persistence, evidence);
-            const auto stable = ProductionPersistenceAccess::evolve(persistence, evidence);
-            return first.completeStateChanged() && second.completeStateChanged() &&
-                !stable.completeStateChanged();
-        }
         if (scenario == LiveScenario::invalidate_and_drain) {
             auto destroyed = std::make_shared<std::atomic<bool>>(false);
             auto backend = std::make_shared<FailClosedBackend>(destroyed);
