@@ -3,6 +3,8 @@
 #include "detail/simulation_phase_profile.hpp"
 #include "detail/spatial_adaptive_mesh_impl.hpp"
 
+#include <utility>
+
 namespace AdaptiveMesh::detail {
 
 class SpatialAdaptiveMeshInternalAccess final {
@@ -55,6 +57,21 @@ public:
         const auto& direction = request.direction();
         if (!direction) return FinalRevalidationOutcome::unavailable_or_failed;
         return backend.revalidate(snapshot, *direction);
+    }
+
+    [[nodiscard]] static auto prepareD7Publication(
+        SpatialAdaptiveMesh& mesh,
+        const ProductionTransitionEvaluationLocator& locator,
+        const ProductionD7PublicationInput& input)
+    {
+        return mesh.impl_->prepareD7Publication(locator, input);
+    }
+
+    [[nodiscard]] static ProductionD7PublicationCommitStatus commitD7Publication(
+        SpatialAdaptiveMesh& mesh,
+        SpatialAdaptiveMesh::Impl::PreparedD7PublicationTransaction&& transaction)
+    {
+        return mesh.impl_->commitD7Publication(std::move(transaction));
     }
 };
 
