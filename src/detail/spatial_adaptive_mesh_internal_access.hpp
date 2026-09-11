@@ -1,5 +1,6 @@
 #pragma once
 
+#include "detail/simulation_phase_profile.hpp"
 #include "detail/spatial_adaptive_mesh_impl.hpp"
 
 namespace AdaptiveMesh::detail {
