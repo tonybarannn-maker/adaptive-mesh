@@ -2,6 +2,9 @@
 
 #include "system_architecture.hpp"
 #include "detail/production_authority_internal.hpp"
+#if SOAM_PHASE_PROFILE_ENABLED
+#include "detail/simulation_phase_profile.hpp"
+#endif
 
 #include <algorithm>
 #include <atomic>
@@ -205,7 +208,7 @@ struct SpatialAdaptiveMesh::Impl {
         std::unique_ptr<detail::ProductionTransitionEvaluationBinding>
             productionTransitionEvaluationBinding_;
 #if SOAM_PHASE_PROFILE_ENABLED
-        SimulationPhaseProfile lastSimulationPhaseProfile{};
+        std::optional<detail::SimulationPhaseProfile> lastSimulationPhaseProfile;
 #endif
 
         void validateNodeIndex(int nodeId) const {
@@ -810,7 +813,8 @@ struct SpatialAdaptiveMesh::Impl {
 
         void simulationStep() {
 #if SOAM_PHASE_PROFILE_ENABLED
-            SimulationPhaseProfile profile{};
+            lastSimulationPhaseProfile.reset();
+            detail::SimulationPhaseProfile profile{};
             const auto preValidationStart = std::chrono::steady_clock::now();
 #endif
             std::unique_lock lock(topologyMutex);
@@ -912,6 +916,7 @@ struct SpatialAdaptiveMesh::Impl {
 #if SOAM_PHASE_PROFILE_ENABLED
             const auto resultValidationEnd = std::chrono::steady_clock::now();
             profile.resultValidationMicroseconds = std::chrono::duration<double, std::micro>(resultValidationEnd - resultValidationStart).count();
+            const auto commitStart = resultValidationEnd;
 #endif
             for (size_t i = 0; i < nodes.size(); ++i) {
                 const double committedState = computedStates[i];
@@ -924,17 +929,17 @@ struct SpatialAdaptiveMesh::Impl {
                 }
             }
 #if SOAM_PHASE_PROFILE_ENABLED
-            const auto postValidationStart = std::chrono::steady_clock::now();
-#endif
-#if SOAM_PHASE_PROFILE_ENABLED
-            const auto profileEnd = std::chrono::steady_clock::now();
-            profile.postValidationMicroseconds = std::chrono::duration<double, std::micro>(profileEnd - postValidationStart).count();
+            const auto commitEnd = std::chrono::steady_clock::now();
+            profile.commitMicroseconds =
+                std::chrono::duration<double, std::micro>(
+                    commitEnd - commitStart).count();
             lastSimulationPhaseProfile = profile;
 #endif
         }
 
 #if SOAM_PHASE_PROFILE_ENABLED
-        [[nodiscard]] SimulationPhaseProfile getLastSimulationPhaseProfile() const {
+        [[nodiscard]] std::optional<detail::SimulationPhaseProfile>
+        currentSimulationPhaseProfile() const {
             std::shared_lock lock(topologyMutex);
             return lastSimulationPhaseProfile;
         }
