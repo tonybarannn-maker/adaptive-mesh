@@ -31,7 +31,37 @@ jobs:
       - name: Build all configured targets
         run: cmake --build build-a1a21 --parallel 2
       - name: Profile diagnostics smoke
-        run: ./build-a1a21/mesh_phase_profile
+        run: |
+          cat > build-a1a21/profile_smoke.cpp <<'CPP'
+          #include "system_architecture.hpp"
+          #include "detail/simulation_diagnostics.hpp"
+          #include <cmath>
+          #include <cstdlib>
+          int main() {
+              AdaptiveMesh::SpatialAdaptiveMesh mesh(1);
+              mesh.addNode(0, {0.0, 0.0, 0.0}, 1.0);
+              mesh.addNode(1, {1.0, 0.0, 0.0}, 1.0);
+              mesh.connectNodes(0, 1);
+              mesh.injectExternalShock(0, 0.5);
+              mesh.simulationStep();
+              const auto p = AdaptiveMesh::detail::SimulationDiagnosticsAccess::simulationProfile(mesh);
+              const double values[] = {
+                  p.preValidationMicroseconds,
+                  p.workerPoolReadyMicroseconds,
+                  p.bufferPreparationMicroseconds,
+                  p.workerDispatchWaitMicroseconds,
+                  p.resultValidationMicroseconds,
+                  p.commitMicroseconds,
+                  p.postValidationMicroseconds};
+              for (double v : values) if (!std::isfinite(v) || v < 0.0) return EXIT_FAILURE;
+              return EXIT_SUCCESS;
+          }
+          CPP
+          c++ -std=c++20 -DSOAM_PHASE_PROFILE_ENABLED=1 \
+            -Ibuild-a1a21/generated/profile -Iinclude -Isrc \
+            build-a1a21/profile_smoke.cpp build-a1a21/libadaptive_mesh_profile.a -pthread \
+            -o build-a1a21/profile_smoke
+          ./build-a1a21/profile_smoke
       - name: Normal/profile functional equivalence
         run: |
           ./build-a1a21/mesh_benchmark 1 2 > build-a1a21/normal.csv
