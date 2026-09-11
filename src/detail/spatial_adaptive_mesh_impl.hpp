@@ -56,6 +56,7 @@ struct SpatialAdaptiveMesh::Impl {
             std::uint64_t relationshipGeneration;
             std::uint64_t authorityRelevantContextLineage;
             detail::ProductionPersistenceRecord persistence;
+            detail::ProductionD7PublicationRecord d7Publication;
         };
 
         class LiveProductionTransitionEvaluationBackend final
@@ -97,6 +98,8 @@ struct SpatialAdaptiveMesh::Impl {
                     current->authorityRelevantContextLineage,
                     transitionContractIdentity_,
                     current->authorityRelevantContextLineage,
+                    current->d7Publication.status(),
+                    current->d7Publication.lineage(),
                     detail::ProductionPersistenceAccess::state(
                         current->persistence),
                     detail::ProductionPersistenceAccess::lineage(
@@ -158,7 +161,11 @@ struct SpatialAdaptiveMesh::Impl {
                         snapshot.persistenceState() ||
                     detail::ProductionPersistenceAccess::lineage(
                         current->persistence) !=
-                        snapshot.persistenceLineage()) {
+                        snapshot.persistenceLineage() ||
+                    current->d7Publication.status() !=
+                        snapshot.d7PublicationStatus() ||
+                    current->d7Publication.lineage() !=
+                        snapshot.d7PublicationLineage()) {
                     return detail::FinalRevalidationOutcome::stale;
                 }
                 return detail::FinalRevalidationOutcome::revalidated;
