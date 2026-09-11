@@ -1,7 +1,7 @@
 #pragma once
 
 #include "system_architecture.hpp"
-#include "detail/production_transition_evaluation_internal.hpp"
+#include "detail/production_authority_internal.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -200,6 +200,7 @@ struct SpatialAdaptiveMesh::Impl {
         std::exception_ptr workerException;
         bool simulationBufferShapeDirty = true;
         bool topologyValidationRequired = true;
+        detail::ProductionAuthorityLedger productionAuthorityLedger_;
         std::unique_ptr<detail::ProductionTransitionEvaluationBinding>
             productionTransitionEvaluationBinding_;
 #if SOAM_PHASE_PROFILE_ENABLED
@@ -590,6 +591,8 @@ struct SpatialAdaptiveMesh::Impl {
     public:
         explicit Impl(size_t maxWorkers = 0)
             : workerLimit(maxWorkers),
+              productionAuthorityLedger_(
+                  detail::MeshInitializationAccess::nextDomainIdentity()),
               productionTransitionEvaluationBinding_(
                   std::make_unique<
                       detail::ProductionTransitionEvaluationBinding>(
@@ -941,6 +944,19 @@ struct SpatialAdaptiveMesh::Impl {
         [[nodiscard]] detail::ProductionTransitionEvaluationBindingHandle
         evaluationHandle() const noexcept {
             return productionTransitionEvaluationBinding_->handle();
+        }
+
+        [[nodiscard]] ProductionAuthorityDerivationResult
+        deriveProductionAuthority(
+            const ProductionTransitionEligibilityDecision& eligibility,
+            bool authorityPolicySatisfied)
+        {
+            LiveProductionTransitionEvaluationBackend backend(*this);
+            return detail::ProductionAuthorityLiveDerivation::evaluate(
+                backend,
+                productionAuthorityLedger_,
+                eligibility,
+                authorityPolicySatisfied);
         }
 
         [[nodiscard]] double getNodeState(size_t id) const {
