@@ -151,22 +151,16 @@ int main() {
     }
 
     bool admissionClosed = false;
-    constexpr std::size_t maxProbeAttempts = 100000;
-    for (std::size_t attempt = 0; attempt < maxProbeAttempts; ++attempt) {
+    while (!admissionClosed) {
         const auto before = control->entries.load();
-        if (probeEvaluator.evaluate({0, 1}) !=
-            ProductionTransitionEvaluation::not_eligible) {
-            break;
-        }
+        const auto result = probeEvaluator.evaluate({0, 1});
         const auto after = control->entries.load();
-        if (after == before) {
-            admissionClosed = true;
-            break;
-        }
-        std::this_thread::yield();
+        admissionClosed =
+            result == ProductionTransitionEvaluation::not_eligible &&
+            after == before;
     }
 
-    const bool blockedWhileLeaseHeld = admissionClosed &&
+    const bool blockedWhileLeaseHeld =
         !firstCompleted.load() && !drainCompleted.load() &&
         !control->destroyed.load();
 
