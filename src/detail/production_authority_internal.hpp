@@ -1,7 +1,9 @@
 #pragma once
 
 #include "production_authority_context.hpp"
+#include "production_authority_policy.hpp"
 #include "production_authority_types.hpp"
+#include "detail/production_transition_evaluation_internal.hpp"
 
 #include <atomic>
 #include <cstdint>
@@ -60,6 +62,9 @@ public:
         AuthorityDomainIdentity domain,
         ProductionTransitionRequestBinding binding,
         std::uint64_t authoritativeEpoch,
+        bool liveBindingCurrent,
+        bool stateCurrent,
+        bool transitionClassCurrent,
         bool freshnessSatisfied,
         bool revalidationSatisfied,
         bool authorityPolicySatisfied) noexcept
@@ -68,6 +73,9 @@ public:
             domain,
             binding,
             authoritativeEpoch,
+            liveBindingCurrent,
+            stateCurrent,
+            transitionClassCurrent,
             freshnessSatisfied,
             revalidationSatisfied,
             authorityPolicySatisfied};
@@ -104,6 +112,24 @@ public:
         return context.authoritativeEpoch_;
     }
 
+    [[nodiscard]] static bool liveBindingCurrent(
+        const ProductionAuthorityContext& context) noexcept
+    {
+        return context.liveBindingCurrent_;
+    }
+
+    [[nodiscard]] static bool stateCurrent(
+        const ProductionAuthorityContext& context) noexcept
+    {
+        return context.stateCurrent_;
+    }
+
+    [[nodiscard]] static bool transitionClassCurrent(
+        const ProductionAuthorityContext& context) noexcept
+    {
+        return context.transitionClassCurrent_;
+    }
+
     [[nodiscard]] static bool freshnessSatisfied(
         const ProductionAuthorityContext& context) noexcept
     {
@@ -120,6 +146,113 @@ public:
         const ProductionAuthorityContext& context) noexcept
     {
         return context.authorityPolicySatisfied_;
+    }
+
+    [[nodiscard]] static std::uint64_t stateVersionValue(
+        const ProductionStateVersion& version) noexcept
+    {
+        return version.opaqueVersion_;
+    }
+
+    [[nodiscard]] static std::uint64_t transitionClassValue(
+        const ProductionTransitionClassId& transitionClass) noexcept
+    {
+        return transitionClass.opaqueClassId_;
+    }
+};
+
+class ProductionAuthorityLiveDerivation final {
+public:
+    [[nodiscard]] static ProductionAuthorityDerivationResult evaluate(
+        ProductionTransitionEvaluationBackend& backend,
+        AuthorityDomainIdentity domain,
+        const ProductionTransitionEligibilityDecision& eligibility,
+        bool authorityPolicySatisfied)
+    {
+        const auto& request = eligibility.binding();
+        bool liveBindingCurrent = false;
+        bool stateCurrent = false;
+        bool transitionClassCurrent = false;
+        bool freshnessSatisfied = false;
+        bool revalidationSatisfied = false;
+        std::uint64_t authoritativeEpoch = 0;
+
+        if (eligibility.eligibility() ==
+            ProductionTransitionEligibility::eligible_for_authority_consideration) {
+            const auto& requestedRelationship = request.relationship();
+            const ProductionTransitionEvaluationLocator locator{
+                requestedRelationship.sourceNodeId(),
+                requestedRelationship.targetNodeId()};
+
+            const auto resolution = backend.resolveCurrentRelationship(locator);
+            if (resolution.status() == RelationshipResolutionStatus::resolved &&
+                resolution.relationship()) {
+                const auto& liveRelationship = *resolution.relationship();
+                liveBindingCurrent =
+                    liveRelationship.sourceNodeId() ==
+                        requestedRelationship.sourceNodeId() &&
+                    liveRelationship.targetNodeId() ==
+                        requestedRelationship.targetNodeId() &&
+                    liveRelationship.generation() ==
+                        requestedRelationship.generation();
+
+                if (liveBindingCurrent) {
+                    const auto capture = backend.captureSnapshot(liveRelationship);
+                    if (capture.status() == SnapshotCaptureStatus::complete &&
+                        capture.snapshot()) {
+                        const auto& snapshot = *capture.snapshot();
+                        authoritativeEpoch = snapshot.lineage();
+                        stateCurrent =
+                            snapshot.stateVersion().opaqueValueForConstruction() ==
+                            ProductionAuthorityDerivationAccess::stateVersionValue(
+                                request.stateVersion());
+                        transitionClassCurrent =
+                            snapshot.transitionClass().opaqueValueForConstruction() ==
+                            ProductionAuthorityDerivationAccess::transitionClassValue(
+                                request.transitionClass());
+
+                        if (stateCurrent && transitionClassCurrent) {
+                            const auto derivation = backend.deriveDirection(snapshot);
+                            const bool directionCurrent =
+                                derivation.status() == RequestDerivationStatus::derived &&
+                                derivation.direction() &&
+                                derivation.direction()->lineage() == snapshot.lineage() &&
+                                derivation.direction()->direction() == request.direction();
+
+                            if (!directionCurrent) {
+                                liveBindingCurrent = false;
+                            } else {
+                                const auto& direction = *derivation.direction();
+                                freshnessSatisfied =
+                                    backend.validateFreshness(snapshot, direction) ==
+                                    DomainValidationOutcome::satisfied;
+
+                                if (freshnessSatisfied) {
+                                    revalidationSatisfied =
+                                        backend.revalidate(snapshot, direction) ==
+                                        FinalRevalidationOutcome::revalidated;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        auto authorityContext = ProductionAuthorityDerivationAccess::context(
+            domain,
+            request,
+            authoritativeEpoch,
+            liveBindingCurrent,
+            stateCurrent,
+            transitionClassCurrent,
+            freshnessSatisfied,
+            revalidationSatisfied,
+            authorityPolicySatisfied);
+
+        return ProductionAuthorityDerivationPolicy{}.evaluate(
+            eligibility,
+            authorityContext);
     }
 };
 
