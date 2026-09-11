@@ -1,0 +1,74 @@
+name: Verify token-delta/v0 exact SHA
+
+on:
+  push:
+    branches:
+      - verification/token-delta-v0-e165c522
+
+permissions:
+  contents: read
+
+jobs:
+  verify-exact-sha:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact token-delta/v0 SHA
+        uses: actions/checkout@v4
+        with:
+          ref: e165c5227d17bb743f278d9d4285970c6a5f38ec
+          fetch-depth: 0
+
+      - name: Assert exact SHA and clean tree
+        run: |
+          test "$(git rev-parse HEAD)" = "e165c5227d17bb743f278d9d4285970c6a5f38ec"
+          git diff --exit-code
+          git diff --cached --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"
+
+      - name: Configure Release warnings-as-errors
+        run: >-
+          cmake -S . -B build-token-delta-v0 -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_TESTS=ON
+          -DBUILD_BENCHMARKS=ON
+          -DBUILD_EXAMPLES=ON
+          -DSOAM_WARNINGS_AS_ERRORS=ON
+
+      - name: Verify registered test count
+        run: |
+          ctest --test-dir build-token-delta-v0 -N | tee build-token-delta-v0/ctest-list.txt
+          grep -q '^Total Tests: 28$' build-token-delta-v0/ctest-list.txt
+          grep -q 'proof_token_delta_v0' build-token-delta-v0/ctest-list.txt
+
+      - name: Run token-delta/v0 guard
+        run: ctest --test-dir build-token-delta-v0 -R '^proof_token_delta_v0$' --output-on-failure
+
+      - name: Build all configured targets
+        run: cmake --build build-token-delta-v0 --parallel 2
+
+      - name: Full CTest
+        run: ctest --test-dir build-token-delta-v0 --output-on-failure
+
+      - name: Install sanity
+        run: |
+          cmake --install build-token-delta-v0 --prefix "$PWD/stage"
+          test -f stage/include/system_architecture.hpp
+          test -f stage/include/production_transition_evaluator.hpp
+          test -f stage/lib/cmake/AdaptiveMesh/AdaptiveMeshConfig.cmake
+          test ! -e stage/include/tests/proofs/token_delta_v0.py
+
+      - name: Structural frozen-delta gates
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          cmake = Path('CMakeLists.txt').read_text()
+          proof = Path('tests/proofs/token_delta_v0.py').read_text()
+          assert 'proof_token_delta_v0' in cmake
+          assert 'find_package(Python3 REQUIRED COMPONENTS Interpreter)' in cmake
+          assert 'normal/profile token delta: 0' in proof
+          assert 'scenario residual whitelist: 2 forward declarations + 1 mesh friend' in proof
+          assert 'expected_count: int' in proof
+          assert 'FRIEND = (' in proof
+          assert 'FORWARD = (' in proof
+          PY
+          test -z "$(git diff 522c5fecd7299b879b3bc3f77177cdd5d79426d6..HEAD -- src include cmake/templates)"
