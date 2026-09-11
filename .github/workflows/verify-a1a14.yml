@@ -1,0 +1,61 @@
+name: Verify A.1a-1.4 exact SHA
+
+on:
+  push:
+    branches:
+      - verification/a1a14-0e7ce613
+
+jobs:
+  verify-exact-sha:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact A.1a-1.4 SHA
+        uses: actions/checkout@v4
+        with:
+          ref: 0e7ce6135762588cd8cca4ce6b1ec3002ba48e01
+          fetch-depth: 0
+      - name: Assert exact SHA and clean tree
+        run: |
+          test "$(git rev-parse HEAD)" = "0e7ce6135762588cd8cca4ce6b1ec3002ba48e01"
+          git diff --exit-code
+          git diff --cached --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"
+      - name: Configure Release warnings-as-errors
+        run: >-
+          cmake -S . -B build-a1a14 -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_TESTS=ON
+          -DBUILD_BENCHMARKS=ON
+          -DBUILD_EXAMPLES=ON
+          -DSOAM_WARNINGS_AS_ERRORS=ON
+      - name: Build standalone binding gate
+        run: cmake --build build-a1a14 --target production_transition_evaluation_binding_tests --parallel 2
+      - name: Run standalone binding gate
+        run: ctest --test-dir build-a1a14 -R '^run_production_transition_evaluation_binding_tests$' --output-on-failure
+      - name: Build full target matrix
+        run: >-
+          cmake --build build-a1a14 --parallel 2 --target
+          adaptive_mesh adaptive_mesh_profile adaptive_mesh_scenario adaptive_mesh_k12_scenario_support
+          production_persistence_tests production_transition_evaluation_binding_tests
+          production_transition_evaluator_tests production_transition_evaluator_concurrency_tests
+          production_transition_evaluator_live_binding_tests production_transition_commit_tests
+          production_transition_evaluator_live_compile_tests production_runtime_consumer_tests
+          mesh_phase_profile mesh_benchmark mesh_scaling_sweep mesh_benchmark_profile adaptive_mesh_demo
+      - name: Verify registered test count
+        run: |
+          ctest --test-dir build-a1a14 -N | tee build-a1a14/ctest-list.txt
+          test "$(grep -c '^  Test #' build-a1a14/ctest-list.txt)" -eq 28
+      - name: Full CTest
+        run: ctest --test-dir build-a1a14 --output-on-failure
+      - name: Install sanity
+        run: |
+          cmake --install build-a1a14 --prefix "$PWD/stage"
+          test ! -e stage/include/detail/production_transition_evaluation_internal.hpp
+          test ! -e stage/include/detail/spatial_adaptive_mesh_internal_access.hpp
+          test ! -e stage/include/tests/production_transition_evaluation_binding_tests.cpp
+      - name: Structural invariants
+        run: |
+          git diff --exit-code c3cebb908dcc07097617feb38264f2f1b43c5025 -- src/detail/spatial_adaptive_mesh_internal_access.hpp
+          test -z "$(git grep -n 'binding\.state_' -- tests/support/production_transition_evaluator_live_scenarios.cpp || true)"
+          test -z "$(git grep -n 'sleep_for' -- tests/production_transition_evaluation_binding_tests.cpp || true)"
+          test -z "$(git grep -n 'maxProbeAttempts' -- tests/production_transition_evaluation_binding_tests.cpp || true)"
