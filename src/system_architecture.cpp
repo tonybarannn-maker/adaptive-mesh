@@ -1,4 +1,6 @@
 #include "detail/spatial_adaptive_mesh_impl.hpp"
+#include "detail/production_authority_internal.hpp"
+#include "production_authority_policy.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -6,6 +8,77 @@
 #include <string>
 
 namespace AdaptiveMesh {
+
+ProductionAuthorityDerivationResult
+ProductionAuthorityDerivationPolicy::evaluate(
+    const ProductionTransitionEligibilityDecision& eligibility,
+    const ProductionAuthorityContext& authorityContext) const
+{
+    ProductionAuthorityDerivationResult result;
+
+    if (eligibility.eligibility() !=
+        ProductionTransitionEligibility::eligible_for_authority_consideration) {
+        result.rejectionReason_ =
+            ProductionAuthorityRejectionReason::eligibility_not_satisfied;
+        return result;
+    }
+
+    if (eligibility.binding() !=
+            detail::ProductionAuthorityDerivationAccess::binding(authorityContext) ||
+        !detail::ProductionAuthorityDerivationAccess::liveBindingCurrent(
+            authorityContext)) {
+        result.rejectionReason_ =
+            ProductionAuthorityRejectionReason::binding_mismatch;
+        return result;
+    }
+
+    if (!detail::ProductionAuthorityDerivationAccess::stateCurrent(
+            authorityContext)) {
+        result.rejectionReason_ =
+            ProductionAuthorityRejectionReason::stale_state;
+        return result;
+    }
+
+    if (!detail::ProductionAuthorityDerivationAccess::transitionClassCurrent(
+            authorityContext)) {
+        result.rejectionReason_ =
+            ProductionAuthorityRejectionReason::transition_class_mismatch;
+        return result;
+    }
+
+    if (!detail::ProductionAuthorityDerivationAccess::freshnessSatisfied(
+            authorityContext)) {
+        result.rejectionReason_ =
+            ProductionAuthorityRejectionReason::freshness_invalid;
+        return result;
+    }
+
+    if (!detail::ProductionAuthorityDerivationAccess::revalidationSatisfied(
+            authorityContext)) {
+        result.rejectionReason_ =
+            ProductionAuthorityRejectionReason::revalidation_failed;
+        return result;
+    }
+
+    if (!detail::ProductionAuthorityDerivationAccess::authorityPolicySatisfied(
+            authorityContext)) {
+        result.rejectionReason_ =
+            ProductionAuthorityRejectionReason::authority_policy_denied;
+        return result;
+    }
+
+    result.capability_.emplace(
+        detail::ProductionAuthorityDerivationAccess::capability(
+            detail::ProductionAuthorityDerivationAccess::nextCapabilityId(),
+            detail::ProductionAuthorityDerivationAccess::domain(
+                authorityContext),
+            eligibility.binding(),
+            detail::ProductionAuthorityDerivationAccess::authoritativeEpoch(
+                authorityContext)));
+    result.decision_ = ProductionAuthorityDecision::capability_issued;
+    result.rejectionReason_ = ProductionAuthorityRejectionReason::none;
+    return result;
+}
 
 void requireFinite(double value, const char* name) {
     if (!std::isfinite(value)) {
@@ -158,6 +231,10 @@ void SpatialAdaptiveMesh::autoConnectNearbyNodes(double radius) { impl_->autoCon
 void SpatialAdaptiveMesh::injectExternalShock(int id, double magnitude) { impl_->injectExternalShock(id, magnitude); }
 void SpatialAdaptiveMesh::simulationStep() { impl_->simulationStep(); }
 void SpatialAdaptiveMesh::simulationStepAsync() { impl_->simulationStepAsync(); }
+ProductionTransitionCommitResult SpatialAdaptiveMesh::commitProductionTransition(
+    ProductionExecutionCapability&& capability) {
+    return impl_->commitProductionTransition(std::move(capability));
+}
 double SpatialAdaptiveMesh::getNodeState(std::size_t id) const { return impl_->getNodeState(id); }
 double SpatialAdaptiveMesh::getNodeHealth(std::size_t id) const { return impl_->getNodeHealth(id); }
 std::size_t SpatialAdaptiveMesh::getNodeBridgesCount(std::size_t id) const { return impl_->getNodeBridgesCount(id); }

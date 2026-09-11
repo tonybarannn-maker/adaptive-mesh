@@ -117,16 +117,21 @@ if(BUILD_TESTS)
   soam_add_test(api_access_tests tests/api_access_tests.cpp adaptive_mesh)
   soam_add_test(production_transition_eligibility_tests tests/production_transition_eligibility_tests.cpp adaptive_mesh)
   soam_add_test(production_transition_eligibility_compile_tests tests/production_transition_eligibility_compile_tests.cpp adaptive_mesh_domain)
+  soam_add_test(production_authority_ledger_tests tests/production_authority_ledger_tests.cpp adaptive_mesh)
+  target_include_directories(production_authority_ledger_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
   soam_add_test(production_transition_evaluator_tests tests/production_transition_evaluator_tests.cpp adaptive_mesh_k12_scenario_support)
   soam_add_test(production_transition_evaluator_compile_tests tests/production_transition_evaluator_compile_tests.cpp adaptive_mesh_domain)
   soam_add_test(production_transition_evaluator_concurrency_tests tests/production_transition_evaluator_concurrency_tests.cpp adaptive_mesh_k12_scenario_support)
   soam_add_test(production_transition_evaluator_live_binding_tests tests/production_transition_evaluator_live_binding_tests.cpp adaptive_mesh_k12_scenario_support)
   soam_add_test(production_transition_evaluator_live_concurrency_tests tests/production_transition_evaluator_live_concurrency_tests.cpp adaptive_mesh_k12_scenario_support)
+  soam_add_test(production_transition_commit_tests tests/production_transition_commit_tests.cpp adaptive_mesh_k12_scenario_support)
   soam_add_test(production_transition_evaluator_live_compile_tests tests/production_transition_evaluator_live_compile_tests.cpp adaptive_mesh_k12_live)
   soam_add_test(production_runtime_consumer_tests tests/production_runtime_consumer_tests.cpp adaptive_mesh_k12_live)
   foreach(probe consumer_complete_privileged_type consumer_define_privileged_body
       consumer_construct_evaluator consumer_inject_backend consumer_include_scenario_surface
-      consumer_force_scenario_macro)
+      consumer_force_scenario_macro b5_nc01_direct_capability_construction
+      b5_nc02_capability_copy b5_nc03_eligibility_as_capability
+      b5_nc04_fabricated_authority_context)
     add_test(NAME compile_fail_${probe} COMMAND ${CMAKE_COMMAND}
       -DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_fail/${probe}.cpp
       -DINCLUDE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/include

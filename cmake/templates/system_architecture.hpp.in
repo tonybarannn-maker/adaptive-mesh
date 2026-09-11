@@ -2,6 +2,7 @@
 
 #define SOAM_PHASE_PROFILE_ENABLED @SOAM_PHASE_PROFILE_ENABLED@
 
+#include "production_authority_types.hpp"
 #include "production_transition_evaluator.hpp"
 
 #include <atomic>
@@ -109,6 +110,8 @@ public:
     void simulationStep();
     void simulationStepAsync();
     [[nodiscard]] ProductionTransitionEvaluator productionTransitionEvaluator() const noexcept;
+    [[nodiscard]] ProductionTransitionCommitResult commitProductionTransition(
+        ProductionExecutionCapability&& capability);
     [[nodiscard]] double getNodeState(std::size_t id) const;
     [[nodiscard]] double getNodeHealth(std::size_t id) const;
     [[nodiscard]] std::size_t getNodeBridgesCount(std::size_t id) const;
