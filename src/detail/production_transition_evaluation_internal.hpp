@@ -55,6 +55,54 @@ private:
     friend class ProductionTransitionEvaluatorScenarioAccess;
 };
 
+enum class ProductionD7PublicationStatus : std::uint8_t {
+    unpublished = 0,
+    unavailable = 1,
+    authoritative = 2
+};
+
+class ProductionD7PublicationRecord;
+
+class ProductionD7PublicationLineage final {
+public:
+    friend bool operator==(
+        const ProductionD7PublicationLineage&,
+        const ProductionD7PublicationLineage&) noexcept = default;
+
+private:
+    struct Identity final {};
+
+    ProductionD7PublicationLineage()
+        : identity_(std::make_shared<const Identity>())
+    {
+    }
+
+    void advance() { identity_ = std::make_shared<const Identity>(); }
+
+    std::shared_ptr<const Identity> identity_;
+
+    friend class ProductionD7PublicationRecord;
+};
+
+class ProductionD7PublicationRecord final {
+public:
+    ProductionD7PublicationRecord() = default;
+
+    [[nodiscard]] ProductionD7PublicationStatus status() const noexcept {
+        return status_;
+    }
+
+    [[nodiscard]] const ProductionD7PublicationLineage& lineage()
+        const noexcept {
+        return lineage_;
+    }
+
+private:
+    ProductionD7PublicationStatus status_ =
+        ProductionD7PublicationStatus::unpublished;
+    ProductionD7PublicationLineage lineage_;
+};
+
 class CapturedRelationshipIdentity final {
 public:
     [[nodiscard]] std::size_t sourceNodeId() const noexcept {
@@ -172,18 +220,32 @@ public:
         return persistenceLineage_;
     }
 
+    [[nodiscard]] ProductionD7PublicationStatus d7PublicationStatus()
+        const noexcept {
+        return d7PublicationStatus_;
+    }
+
+    [[nodiscard]] const ProductionD7PublicationLineage& d7PublicationLineage()
+        const noexcept {
+        return d7PublicationLineage_;
+    }
+
 private:
     CoherentProductionTransitionSnapshot(
         CapturedRelationshipIdentity relationship,
         CapturedProductionStateVersion stateVersion,
         ResolvedTransitionClass transitionClass,
         std::uint64_t lineage,
+        ProductionD7PublicationStatus d7PublicationStatus,
+        ProductionD7PublicationLineage d7PublicationLineage,
         ProductionPersistenceState persistenceState,
         ProductionPersistenceLineage persistenceLineage) noexcept
         : relationship_(relationship),
           stateVersion_(stateVersion),
           transitionClass_(transitionClass),
           lineage_(lineage),
+          d7PublicationStatus_(d7PublicationStatus),
+          d7PublicationLineage_(std::move(d7PublicationLineage)),
           persistenceState_(persistenceState),
           persistenceLineage_(std::move(persistenceLineage))
     {
@@ -193,6 +255,8 @@ private:
     CapturedProductionStateVersion stateVersion_;
     ResolvedTransitionClass transitionClass_;
     std::uint64_t lineage_;
+    ProductionD7PublicationStatus d7PublicationStatus_;
+    ProductionD7PublicationLineage d7PublicationLineage_;
     ProductionPersistenceState persistenceState_;
     ProductionPersistenceLineage persistenceLineage_;
 
@@ -416,6 +480,8 @@ protected:
         std::uint64_t stateVersion,
         std::uint64_t transitionClass,
         std::uint64_t lineage,
+        ProductionD7PublicationStatus d7PublicationStatus,
+        ProductionD7PublicationLineage d7PublicationLineage,
         ProductionPersistenceState persistenceState = {},
         ProductionPersistenceLineage persistenceLineage = {}) noexcept {
         return {
@@ -425,6 +491,8 @@ protected:
                 CapturedProductionStateVersion{stateVersion},
                 ResolvedTransitionClass{transitionClass},
                 lineage,
+                d7PublicationStatus,
+                std::move(d7PublicationLineage),
                 persistenceState,
                 std::move(persistenceLineage)
             }
