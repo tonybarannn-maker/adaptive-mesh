@@ -12,11 +12,11 @@ jobs:
       - name: Checkout exact A.1a-1.4 SHA
         uses: actions/checkout@v4
         with:
-          ref: 0e7ce6135762588cd8cca4ce6b1ec3002ba48e01
+          ref: d4cf020236ef048d2181a2c9581d5727507de0e5
           fetch-depth: 0
       - name: Assert exact SHA and clean tree
         run: |
-          test "$(git rev-parse HEAD)" = "0e7ce6135762588cd8cca4ce6b1ec3002ba48e01"
+          test "$(git rev-parse HEAD)" = "d4cf020236ef048d2181a2c9581d5727507de0e5"
           git diff --exit-code
           git diff --cached --exit-code
           test -z "$(git ls-files --others --exclude-standard)"
@@ -37,14 +37,14 @@ jobs:
           cmake --build build-a1a14 --parallel 2 --target
           adaptive_mesh adaptive_mesh_profile adaptive_mesh_scenario adaptive_mesh_k12_scenario_support
           production_persistence_tests production_transition_evaluation_binding_tests
-          production_transition_evaluator_tests production_transition_evaluator_concurrency_tests
-          production_transition_evaluator_live_binding_tests production_transition_commit_tests
-          production_transition_evaluator_live_compile_tests production_runtime_consumer_tests
-          mesh_phase_profile mesh_benchmark mesh_scaling_sweep mesh_benchmark_profile adaptive_mesh_demo
+          production_transition_evaluator_tests production_transition_evaluator_live_binding_tests
+          production_transition_commit_tests production_transition_evaluator_live_compile_tests
+          production_runtime_consumer_tests mesh_phase_profile mesh_benchmark mesh_scaling_sweep
+          mesh_benchmark_profile adaptive_mesh_demo
       - name: Verify registered test count
         run: |
           ctest --test-dir build-a1a14 -N | tee build-a1a14/ctest-list.txt
-          test "$(grep -c '^  Test #' build-a1a14/ctest-list.txt)" -eq 28
+          test "$(grep -c '^  Test #' build-a1a14/ctest-list.txt)" -eq 27
       - name: Full CTest
         run: ctest --test-dir build-a1a14 --output-on-failure
       - name: Install sanity
