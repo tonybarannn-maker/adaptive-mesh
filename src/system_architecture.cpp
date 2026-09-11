@@ -231,6 +231,10 @@ void SpatialAdaptiveMesh::autoConnectNearbyNodes(double radius) { impl_->autoCon
 void SpatialAdaptiveMesh::injectExternalShock(int id, double magnitude) { impl_->injectExternalShock(id, magnitude); }
 void SpatialAdaptiveMesh::simulationStep() { impl_->simulationStep(); }
 void SpatialAdaptiveMesh::simulationStepAsync() { impl_->simulationStepAsync(); }
+ProductionTransitionCommitResult SpatialAdaptiveMesh::commitProductionTransition(
+    ProductionExecutionCapability&& capability) {
+    return impl_->commitProductionTransition(std::move(capability));
+}
 double SpatialAdaptiveMesh::getNodeState(std::size_t id) const { return impl_->getNodeState(id); }
 double SpatialAdaptiveMesh::getNodeHealth(std::size_t id) const { return impl_->getNodeHealth(id); }
 std::size_t SpatialAdaptiveMesh::getNodeBridgesCount(std::size_t id) const { return impl_->getNodeBridgesCount(id); }
