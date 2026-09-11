@@ -1,4 +1,5 @@
 #include "detail/production_transition_evaluation_internal.hpp"
+#include "detail/production_transition_evaluator_binding_access.hpp"
 
 #include <atomic>
 #include <condition_variable>
@@ -8,19 +9,6 @@
 #include <mutex>
 #include <thread>
 #include <utility>
-
-namespace AdaptiveMesh::detail {
-
-class ProductionTransitionEvaluatorScenarioAccess final {
-public:
-    [[nodiscard]] static ProductionTransitionEvaluator evaluator(
-        ProductionTransitionEvaluationBinding& binding) noexcept {
-        return ProductionTransitionEvaluatorBindingAccess::evaluator(
-            binding.handle());
-    }
-};
-
-} // namespace AdaptiveMesh::detail
 
 namespace {
 
@@ -107,7 +95,7 @@ private:
 int main() {
     using AdaptiveMesh::ProductionTransitionEvaluation;
     using AdaptiveMesh::detail::ProductionTransitionEvaluationBinding;
-    using AdaptiveMesh::detail::ProductionTransitionEvaluatorScenarioAccess;
+    using AdaptiveMesh::detail::ProductionTransitionEvaluatorBindingAccess;
 
     const auto control = std::make_shared<BackendControl>();
     auto backend = std::make_shared<BlockingFailClosedBackend>(control);
@@ -115,9 +103,9 @@ int main() {
     backend.reset();
 
     auto firstEvaluator =
-        ProductionTransitionEvaluatorScenarioAccess::evaluator(binding);
+        ProductionTransitionEvaluatorBindingAccess::evaluator(binding.handle());
     auto probeEvaluator =
-        ProductionTransitionEvaluatorScenarioAccess::evaluator(binding);
+        ProductionTransitionEvaluatorBindingAccess::evaluator(binding.handle());
 
     std::atomic<bool> firstCompleted{false};
     ProductionTransitionEvaluation firstResult =

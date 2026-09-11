@@ -41,12 +41,9 @@ function(soam_configure_runtime_header output_dir profile scenario)
       "class ProductionTransitionEvaluatorScenarioAccess;")
     set(SOAM_MESH_SCENARIO_FRIEND
       "    friend class detail::ProductionTransitionEvaluatorScenarioAccess;")
-    set(SOAM_BINDING_ACCESS_SCENARIO_FRIEND
-      "    friend class ProductionTransitionEvaluatorScenarioAccess;")
   else()
     set(SOAM_SCENARIO_FORWARD_DECL "")
     set(SOAM_MESH_SCENARIO_FRIEND "")
-    set(SOAM_BINDING_ACCESS_SCENARIO_FRIEND "")
   endif()
   file(MAKE_DIRECTORY "${output_dir}")
   configure_file(cmake/templates/system_architecture.hpp.in
@@ -124,11 +121,10 @@ if(BUILD_TESTS)
   add_executable(production_transition_evaluation_binding_tests
     tests/production_transition_evaluation_binding_tests.cpp
     src/production_transition_evaluator.cpp)
-  target_link_libraries(production_transition_evaluation_binding_tests PRIVATE adaptive_mesh_scenario)
+  target_link_libraries(production_transition_evaluation_binding_tests PRIVATE adaptive_mesh)
   target_include_directories(production_transition_evaluation_binding_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${SOAM_SCENARIO_INCLUDE_DIR})
+    ${CMAKE_CURRENT_SOURCE_DIR}/src)
   add_test(NAME run_production_transition_evaluation_binding_tests
     COMMAND production_transition_evaluation_binding_tests)
   set_tests_properties(run_production_transition_evaluation_binding_tests PROPERTIES TIMEOUT 30)

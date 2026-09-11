@@ -74,19 +74,4 @@ private:
     friend class detail::ProductionTransitionEvaluatorBindingAccess;
 };
 
-namespace detail {
-
-class ProductionTransitionEvaluatorBindingAccess final {
-private:
-    [[nodiscard]] static ProductionTransitionEvaluator evaluator(
-        ProductionTransitionEvaluationBindingHandle binding) noexcept {
-        return ProductionTransitionEvaluator{std::move(binding)};
-    }
-
-    friend class ::AdaptiveMesh::SpatialAdaptiveMesh;
-@SOAM_BINDING_ACCESS_SCENARIO_FRIEND@
-};
-
-} // namespace detail
-
 } // namespace AdaptiveMesh
