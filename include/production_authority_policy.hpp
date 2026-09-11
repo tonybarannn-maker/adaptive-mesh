@@ -7,6 +7,10 @@
 
 namespace AdaptiveMesh {
 
+namespace detail {
+class ProductionAuthorityLedgerAccess;
+}
+
 class ProductionAuthorityDerivationResult final {
 public:
     [[nodiscard]] ProductionAuthorityDecision decision() const noexcept {
@@ -34,6 +38,7 @@ private:
     std::optional<ProductionExecutionCapability> capability_;
 
     friend class ProductionAuthorityDerivationPolicy;
+    friend class detail::ProductionAuthorityLedgerAccess;
 };
 
 class ProductionAuthorityDerivationPolicy final {
