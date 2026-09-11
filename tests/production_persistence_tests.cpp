@@ -43,6 +43,28 @@ public:
             snapshot.persistenceState(),
             snapshot.persistenceLineage());
     }
+
+    [[nodiscard]] static detail::SnapshotCaptureResult forDirection(
+        const detail::CoherentProductionTransitionSnapshot& snapshot,
+        detail::ProductionD7PublicationStatus status,
+        PersistentBridgeRecommendation recommendation) {
+        auto persistence = snapshot.persistenceState();
+        persistence.recommendation = static_cast<std::uint8_t>(recommendation);
+        return completeSnapshot(
+            snapshot.relationship(),
+            snapshot.stateVersion().opaqueValueForConstruction(),
+            snapshot.transitionClass().opaqueValueForConstruction(),
+            snapshot.lineage(),
+            status,
+            snapshot.d7PublicationLineage(),
+            persistence,
+            snapshot.persistenceLineage());
+    }
+
+    [[nodiscard]] static detail::RequestDerivationResult derive(
+        const detail::CoherentProductionTransitionSnapshot& snapshot) noexcept {
+        return deriveCapturedDirection(snapshot);
+    }
 };
 
 void testCompleteStateChangeDetection() {
@@ -107,6 +129,72 @@ void testResetClearsCompleteState() {
     require(!detail::ProductionPersistenceAccess::reset(persistence));
 }
 
+void testD7DirectionDerivationFromCapturedSnapshot() {
+    SpatialAdaptiveMesh mesh;
+    mesh.addNode(0, {0.0, 0.0, 0.0}, 1.0);
+    mesh.addNode(1, {1.0, 0.0, 0.0}, 1.0);
+    mesh.connectNodes(0, 1);
+
+    const auto captured =
+        detail::SpatialAdaptiveMeshInternalAccess::captureProductionSnapshot(
+            mesh, 0, 1);
+    require(captured.snapshot().has_value());
+    const auto& snapshot = *captured.snapshot();
+
+    const auto unpublished = SnapshotFactory::derive(snapshot);
+    require(
+        unpublished.status() ==
+        detail::RequestDerivationStatus::unavailable_or_failed);
+    require(!unpublished.direction().has_value());
+
+    const auto unavailableSnapshot = SnapshotFactory::forDirection(
+        snapshot,
+        detail::ProductionD7PublicationStatus::unavailable,
+        PersistentBridgeRecommendation::PRESERVE);
+    require(unavailableSnapshot.snapshot().has_value());
+    const auto unavailable = SnapshotFactory::derive(
+        *unavailableSnapshot.snapshot());
+    require(
+        unavailable.status() ==
+        detail::RequestDerivationStatus::unavailable_or_failed);
+    require(!unavailable.direction().has_value());
+
+    const auto preserveSnapshot = SnapshotFactory::forDirection(
+        snapshot,
+        detail::ProductionD7PublicationStatus::authoritative,
+        PersistentBridgeRecommendation::PRESERVE);
+    require(preserveSnapshot.snapshot().has_value());
+    const auto preserve = SnapshotFactory::derive(*preserveSnapshot.snapshot());
+    require(preserve.status() == detail::RequestDerivationStatus::no_request);
+    require(!preserve.direction().has_value());
+
+    const auto constrainSnapshot = SnapshotFactory::forDirection(
+        snapshot,
+        detail::ProductionD7PublicationStatus::authoritative,
+        PersistentBridgeRecommendation::CONSTRAIN);
+    require(constrainSnapshot.snapshot().has_value());
+    const auto constrain = SnapshotFactory::derive(*constrainSnapshot.snapshot());
+    require(constrain.status() == detail::RequestDerivationStatus::derived);
+    require(constrain.direction().has_value());
+    require(
+        constrain.direction()->direction() ==
+        RequestedTransitionDirection::constrain);
+    require(constrain.direction()->lineage() == snapshot.lineage());
+
+    const auto supportSnapshot = SnapshotFactory::forDirection(
+        snapshot,
+        detail::ProductionD7PublicationStatus::authoritative,
+        PersistentBridgeRecommendation::SUPPORT);
+    require(supportSnapshot.snapshot().has_value());
+    const auto support = SnapshotFactory::derive(*supportSnapshot.snapshot());
+    require(support.status() == detail::RequestDerivationStatus::derived);
+    require(support.direction().has_value());
+    require(
+        support.direction()->direction() ==
+        RequestedTransitionDirection::support);
+    require(support.direction()->lineage() == snapshot.lineage());
+}
+
 void testD7PublicationSnapshotCoherence() {
     SpatialAdaptiveMesh mesh;
     mesh.addNode(0, {0.0, 0.0, 0.0}, 1.0);
@@ -165,6 +253,7 @@ int main() {
     testCompleteStateChangeDetection();
     testDirectionReversalRestartsAccumulation();
     testResetClearsCompleteState();
+    testD7DirectionDerivationFromCapturedSnapshot();
     testD7PublicationSnapshotCoherence();
     return EXIT_SUCCESS;
 }

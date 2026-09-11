@@ -109,18 +109,7 @@ struct SpatialAdaptiveMesh::Impl {
             [[nodiscard]] detail::RequestDerivationResult deriveDirection(
                 const detail::CoherentProductionTransitionSnapshot& snapshot)
                 override {
-                std::shared_lock lock(owner_.topologyMutex);
-                const auto* current =
-                    owner_.findLifecycleUnlocked(snapshot.relationship());
-                if (current == nullptr ||
-                    current->authorityRelevantContextLineage !=
-                        snapshot.lineage()) {
-                    return requestDerivationFailed();
-                }
-                // D7 production observation/confidence provenance is not
-                // available in this authorized slice, so no production-native
-                // request direction may be derived yet.
-                return requestDerivationFailed();
+                return deriveCapturedDirection(snapshot);
             }
 
             [[nodiscard]] detail::DomainValidationOutcome validatePermission(

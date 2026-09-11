@@ -527,6 +527,10 @@ protected:
             std::nullopt
         };
     }
+
+    [[nodiscard]]
+    static RequestDerivationResult deriveCapturedDirection(
+        const CoherentProductionTransitionSnapshot& snapshot) noexcept;
 };
 
 class BindingState final {
@@ -746,9 +750,37 @@ public:
         return state(record.persistence_);
     }
 
+    [[nodiscard]] static PersistentBridgeRecommendation recommendation(
+        const ProductionPersistenceState& state) noexcept {
+        return static_cast<PersistentBridgeRecommendation>(state.recommendation);
+    }
+
     friend class ProductionTransitionEvaluatorScenarioAccess;
     friend class ::AdaptiveMesh::SpatialAdaptiveMesh;
 };
+
+inline RequestDerivationResult
+ProductionTransitionEvaluationBackend::deriveCapturedDirection(
+    const CoherentProductionTransitionSnapshot& snapshot) noexcept {
+    if (snapshot.d7PublicationStatus() !=
+        ProductionD7PublicationStatus::authoritative) {
+        return requestDerivationFailed();
+    }
+
+    switch (ProductionPersistenceAccess::recommendation(
+        snapshot.persistenceState())) {
+    case PersistentBridgeRecommendation::PRESERVE:
+        return noRequest();
+    case PersistentBridgeRecommendation::CONSTRAIN:
+        return derivedRequest(
+            snapshot, RequestedTransitionDirection::constrain);
+    case PersistentBridgeRecommendation::SUPPORT:
+        return derivedRequest(
+            snapshot, RequestedTransitionDirection::support);
+    }
+
+    return requestDerivationFailed();
+}
 
 class PermissionValidationResult final {
 public:
