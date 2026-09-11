@@ -9,6 +9,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <exception>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <numeric>
@@ -957,6 +958,136 @@ struct SpatialAdaptiveMesh::Impl {
                 productionAuthorityLedger_,
                 eligibility,
                 authorityPolicySatisfied);
+        }
+
+        [[nodiscard]] ProductionTransitionCommitResult commitProductionTransition(
+            ProductionExecutionCapability&& capability)
+        {
+            using Lifecycle = ProductionCapabilityLifecycleState;
+            using Result = ProductionTransitionCommitResult;
+
+            if (detail::ProductionTransitionCommitAccess::domain(capability) !=
+                productionAuthorityLedger_.domain()) {
+                return Result::target_mismatch;
+            }
+
+            std::unique_lock topologyLock(topologyMutex);
+            const auto capabilityId =
+                detail::ProductionTransitionCommitAccess::id(capability);
+            auto ledgerRecord = productionAuthorityLedger_.lockRecord(capabilityId);
+            if (!ledgerRecord.found()) {
+                return Result::capability_invalid;
+            }
+
+            if (ledgerRecord.state() == Lifecycle::consumed) {
+                return Result::capability_consumed;
+            }
+            if (ledgerRecord.state() == Lifecycle::expired ||
+                ledgerRecord.state() == Lifecycle::invalidated) {
+                return Result::capability_invalid;
+            }
+
+            const auto& capabilityBinding =
+                detail::ProductionTransitionCommitAccess::binding(capability);
+            if (ledgerRecord.binding() != capabilityBinding ||
+                ledgerRecord.issuanceEpoch() !=
+                    detail::ProductionTransitionCommitAccess::issuanceEpoch(
+                        capability)) {
+                ledgerRecord.setState(Lifecycle::invalidated);
+                return Result::capability_invalid;
+            }
+
+            const auto& relationship = capabilityBinding.relationship();
+            const EdgeKey key{
+                relationship.sourceNodeId(),
+                relationship.targetNodeId()};
+            const auto currentIt = productionRelationships_.find(key);
+            if (currentIt == productionRelationships_.end() ||
+                currentIt->second.relationshipGeneration !=
+                    relationship.generation()) {
+                ledgerRecord.setState(Lifecycle::invalidated);
+                return Result::stale_state;
+            }
+
+            auto& current = currentIt->second;
+            const auto requestedStateVersion =
+                detail::ProductionAuthorityDerivationAccess::stateVersionValue(
+                    capabilityBinding.stateVersion());
+            if (current.authorityRelevantContextLineage != requestedStateVersion ||
+                current.authorityRelevantContextLineage !=
+                    ledgerRecord.issuanceEpoch()) {
+                ledgerRecord.setState(Lifecycle::invalidated);
+                return Result::stale_state;
+            }
+
+            constexpr std::uint64_t transitionContractIdentity = 1;
+            if (detail::ProductionAuthorityDerivationAccess::transitionClassValue(
+                    capabilityBinding.transitionClass()) !=
+                transitionContractIdentity) {
+                ledgerRecord.setState(Lifecycle::invalidated);
+                return Result::transition_rejected;
+            }
+
+            if (relationship.sourceNodeId() >= nodes.size() ||
+                relationship.targetNodeId() >= nodes.size()) {
+                ledgerRecord.setState(Lifecycle::invalidated);
+                return Result::stale_state;
+            }
+
+            auto& bridges = nodes[relationship.sourceNodeId()].bridges;
+            const auto bridgeIt = std::find_if(
+                bridges.begin(),
+                bridges.end(),
+                [&relationship](const SpatialBridge& bridge) {
+                    return bridge.targetNodeId ==
+                        static_cast<int>(relationship.targetNodeId());
+                });
+            if (bridgeIt == bridges.end()) {
+                ledgerRecord.setState(Lifecycle::invalidated);
+                return Result::stale_state;
+            }
+
+            // All live binding, generation, version, class, and bridge checks above
+            // are performed while topologyMutex is held exclusively. This is the
+            // commit-time freshness/revalidation boundary for this transition class.
+            SpatialBridge prepared = *bridgeIt;
+            switch (capabilityBinding.direction()) {
+            case RequestedTransitionDirection::constrain:
+                prepared.capacity = std::max(0.01, prepared.capacity * 0.85);
+                prepared.status = BridgeStatus::DAMPING;
+                break;
+            case RequestedTransitionDirection::support:
+                prepared.capacity = std::min(1.0, prepared.capacity + 0.15);
+                prepared.status = prepared.capacity >= 0.9
+                    ? BridgeStatus::NORMAL
+                    : BridgeStatus::RECOVERY;
+                break;
+            default:
+                ledgerRecord.setState(Lifecycle::invalidated);
+                return Result::transition_rejected;
+            }
+
+            if (!std::isfinite(prepared.capacity) ||
+                prepared.capacity < 0.0 || prepared.capacity > 1.0) {
+                ledgerRecord.setState(Lifecycle::invalidated);
+                return Result::capability_invalid;
+            }
+
+            const auto nextVersion = nextAuthorityRelevantContextLineage_;
+            if (nextVersion == 0 ||
+                nextVersion == std::numeric_limits<std::uint64_t>::max()) {
+                ledgerRecord.setState(Lifecycle::invalidated);
+                return Result::capability_invalid;
+            }
+
+            // Nothing below this point may throw. The mesh lock and ledger record
+            // lock remain held through publication, consumption, and version advance.
+            static_assert(std::is_nothrow_copy_assignable_v<SpatialBridge>);
+            *bridgeIt = prepared;
+            ledgerRecord.setState(Lifecycle::consumed);
+            current.authorityRelevantContextLineage = nextVersion;
+            nextAuthorityRelevantContextLineage_ = nextVersion + 1;
+            return Result::committed;
         }
 
         [[nodiscard]] double getNodeState(size_t id) const {
