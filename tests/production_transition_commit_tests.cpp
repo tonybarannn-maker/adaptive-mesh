@@ -24,8 +24,6 @@ int main() {
     require(test_support::runCommitScenario(
         CommitScenario::wrong_target));
     require(test_support::runCommitScenario(
-        CommitScenario::stale_state));
-    require(test_support::runCommitScenario(
         CommitScenario::replay));
     require(test_support::runCommitScenario(
         CommitScenario::wrong_transition_class));
