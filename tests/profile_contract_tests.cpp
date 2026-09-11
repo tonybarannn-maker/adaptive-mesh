@@ -3,6 +3,8 @@
 
 #include <cassert>
 #include <cmath>
+#include <limits>
+#include <stdexcept>
 
 int main() {
     using AdaptiveMesh::SpatialAdaptiveMesh;
@@ -33,6 +35,27 @@ int main() {
         assert(std::isfinite(profile->resultValidationMicroseconds));
         assert(std::isfinite(profile->commitMicroseconds));
         assert(profile->commitMicroseconds >= 0.0);
+    }
+
+    {
+        SpatialAdaptiveMesh mesh(1);
+        mesh.addNode(0, {0.0, 0.0, 0.0}, 0.0);
+        mesh.simulationStep();
+        assert(SimulationPhaseProfileAccessor::current(mesh).has_value());
+
+        constexpr double huge = std::numeric_limits<double>::max();
+        mesh.addNode(1, {1.0, 0.0, 0.0}, huge);
+        mesh.addNode(2, {2.0, 0.0, 0.0}, -huge);
+        mesh.connectNodes(1, 2);
+
+        bool threw = false;
+        try {
+            mesh.simulationStep();
+        } catch (const std::runtime_error&) {
+            threw = true;
+        }
+        assert(threw);
+        assert(!SimulationPhaseProfileAccessor::current(mesh).has_value());
     }
 
     return 0;
