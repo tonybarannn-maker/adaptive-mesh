@@ -34,8 +34,7 @@ target_include_directories(adaptive_mesh_domain INTERFACE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
-function(soam_configure_runtime_header output_dir profile scenario)
-  set(SOAM_PHASE_PROFILE_ENABLED ${profile})
+function(soam_configure_runtime_header output_dir scenario)
   if(scenario)
     set(SOAM_SCENARIO_FORWARD_DECL
       "class ProductionTransitionEvaluatorScenarioAccess;")
@@ -55,15 +54,17 @@ endfunction()
 set(SOAM_NORMAL_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/normal")
 set(SOAM_PROFILE_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/profile")
 set(SOAM_SCENARIO_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/scenario")
-soam_configure_runtime_header("${SOAM_NORMAL_INCLUDE_DIR}" 0 0)
-soam_configure_runtime_header("${SOAM_PROFILE_INCLUDE_DIR}" 1 0)
-soam_configure_runtime_header("${SOAM_SCENARIO_INCLUDE_DIR}" 0 1)
+soam_configure_runtime_header("${SOAM_NORMAL_INCLUDE_DIR}" 0)
+soam_configure_runtime_header("${SOAM_PROFILE_INCLUDE_DIR}" 0)
+soam_configure_runtime_header("${SOAM_SCENARIO_INCLUDE_DIR}" 1)
 target_include_directories(adaptive_mesh_domain BEFORE INTERFACE
   $<BUILD_INTERFACE:${SOAM_NORMAL_INCLUDE_DIR}>)
 
-function(soam_add_runtime target include_dir)
+function(soam_add_runtime target include_dir profile_enabled)
   add_library(${target} STATIC src/system_architecture.cpp)
   target_link_libraries(${target} PUBLIC adaptive_mesh_domain Threads::Threads)
+  target_compile_definitions(${target} PRIVATE
+    SOAM_PHASE_PROFILE_ENABLED=${profile_enabled})
   target_include_directories(${target}
     PUBLIC $<BUILD_INTERFACE:${include_dir}>
            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -71,9 +72,9 @@ function(soam_add_runtime target include_dir)
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 endfunction()
 
-soam_add_runtime(adaptive_mesh "${SOAM_NORMAL_INCLUDE_DIR}")
+soam_add_runtime(adaptive_mesh "${SOAM_NORMAL_INCLUDE_DIR}" 0)
 add_library(AdaptiveMesh::adaptive_mesh ALIAS adaptive_mesh)
-soam_add_runtime(adaptive_mesh_profile "${SOAM_PROFILE_INCLUDE_DIR}")
+soam_add_runtime(adaptive_mesh_profile "${SOAM_PROFILE_INCLUDE_DIR}" 1)
 set_target_properties(adaptive_mesh_profile PROPERTIES EXCLUDE_FROM_ALL TRUE)
 
 add_library(adaptive_mesh_k12_live STATIC
@@ -86,7 +87,7 @@ add_library(AdaptiveMesh::adaptive_mesh_k12_live ALIAS adaptive_mesh_k12_live)
 
 if(BUILD_TESTS)
   enable_testing()
-  soam_add_runtime(adaptive_mesh_scenario "${SOAM_SCENARIO_INCLUDE_DIR}")
+  soam_add_runtime(adaptive_mesh_scenario "${SOAM_SCENARIO_INCLUDE_DIR}" 0)
   set_target_properties(adaptive_mesh_scenario PROPERTIES EXCLUDE_FROM_ALL TRUE)
   add_library(adaptive_mesh_k12_scenario_support STATIC
     src/production_transition_evaluator.cpp
@@ -162,6 +163,7 @@ if(BUILD_BENCHMARKS)
   target_link_libraries(mesh_scaling_sweep PRIVATE adaptive_mesh)
   add_executable(mesh_phase_profile benchmarks/mesh_phase_profile.cpp)
   target_link_libraries(mesh_phase_profile PRIVATE adaptive_mesh_profile)
+  target_compile_definitions(mesh_phase_profile PRIVATE SOAM_PHASE_PROFILE_ENABLED=1)
   target_include_directories(mesh_phase_profile PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src ${SOAM_PROFILE_INCLUDE_DIR})
   add_executable(mesh_benchmark_profile benchmarks/mesh_benchmark.cpp)
