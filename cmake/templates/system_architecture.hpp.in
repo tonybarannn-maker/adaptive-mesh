@@ -1,7 +1,5 @@
 #pragma once
 
-#define SOAM_PHASE_PROFILE_ENABLED @SOAM_PHASE_PROFILE_ENABLED@
-
 #include "production_authority_types.hpp"
 #include "production_transition_evaluator.hpp"
 
@@ -79,18 +77,6 @@ public:
     [[nodiscard]] double applyLocalReflexFilter(double rawInput) const;
 };
 
-#if SOAM_PHASE_PROFILE_ENABLED
-struct SimulationPhaseProfile {
-    double preValidationMicroseconds = 0.0;
-    double workerPoolReadyMicroseconds = 0.0;
-    double bufferPreparationMicroseconds = 0.0;
-    double workerDispatchWaitMicroseconds = 0.0;
-    double resultValidationMicroseconds = 0.0;
-    double commitMicroseconds = 0.0;
-    double postValidationMicroseconds = 0.0;
-};
-#endif
-
 class SpatialAdaptiveMesh {
 public:
     explicit SpatialAdaptiveMesh(std::size_t maxWorkers = 0);
@@ -116,10 +102,6 @@ public:
     [[nodiscard]] double getNodeState(std::size_t id) const;
     [[nodiscard]] double getNodeHealth(std::size_t id) const;
     [[nodiscard]] std::size_t getNodeBridgesCount(std::size_t id) const;
-
-#if SOAM_PHASE_PROFILE_ENABLED
-    [[nodiscard]] SimulationPhaseProfile getLastSimulationPhaseProfile() const;
-#endif
 
 private:
     struct Impl;
