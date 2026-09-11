@@ -480,7 +480,6 @@ private:
     friend class ProductionTransitionEvaluationBindingHandle;
     friend class ProductionTransitionEvaluationBinding;
     friend class ProductionTransitionEvaluatorBindingAccess;
-    friend class ProductionTransitionEvaluatorScenarioAccess;
 };
 
 class EvaluationLease final {
@@ -588,7 +587,6 @@ private:
     std::shared_ptr<BindingState> state_;
 
     friend class ProductionTransitionEvaluatorBindingAccess;
-    friend class ProductionTransitionEvaluatorScenarioAccess;
 };
 
 class ProductionPersistenceEvolutionResult final {
