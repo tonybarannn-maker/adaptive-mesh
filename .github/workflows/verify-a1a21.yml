@@ -1,0 +1,60 @@
+name: Verify A.1a-2.1 exact SHA
+
+on:
+  push:
+    branches: [verification/a1a21-92574c13]
+
+jobs:
+  verify-exact-sha:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact A.1a-2.1 SHA
+        uses: actions/checkout@v4
+        with:
+          ref: 92574c139b5816f08d709273f17d551b17aa0e22
+          fetch-depth: 0
+      - name: Assert exact SHA and clean tree
+        run: |
+          test "$(git rev-parse HEAD)" = "92574c139b5816f08d709273f17d551b17aa0e22"
+          git diff --exit-code
+          git diff --cached --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"
+      - name: Configure Release warnings-as-errors
+        run: cmake -S . -B build-a1a21 -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DBUILD_BENCHMARKS=ON -DBUILD_EXAMPLES=ON -DSOAM_WARNINGS_AS_ERRORS=ON
+      - name: Verify normal/profile public token identity for generated headers
+        run: |
+          cmp build-a1a21/generated/normal/system_architecture.hpp build-a1a21/generated/profile/system_architecture.hpp
+          cmp build-a1a21/generated/normal/production_transition_evaluator.hpp build-a1a21/generated/profile/production_transition_evaluator.hpp
+          ! grep -q 'SOAM_PHASE_PROFILE_ENABLED' build-a1a21/generated/normal/system_architecture.hpp
+          ! grep -q 'SimulationPhaseProfile' build-a1a21/generated/normal/system_architecture.hpp
+          ! grep -q 'getLastSimulationPhaseProfile' build-a1a21/generated/normal/system_architecture.hpp
+      - name: Build all configured targets
+        run: cmake --build build-a1a21 --parallel 2
+      - name: Profile diagnostics smoke
+        run: ./build-a1a21/mesh_phase_profile
+      - name: Normal/profile functional equivalence
+        run: |
+          ./build-a1a21/mesh_benchmark 1 2 > build-a1a21/normal.csv
+          ./build-a1a21/mesh_benchmark_profile 1 2 > build-a1a21/profile.csv
+          diff <(tail -n +3 build-a1a21/normal.csv | cut -d, -f5) <(tail -n +3 build-a1a21/profile.csv | cut -d, -f5)
+      - name: Verify registered test count
+        run: |
+          ctest --test-dir build-a1a21 -N | tee build-a1a21/ctest-list.txt
+          grep -q '^Total Tests: 27$' build-a1a21/ctest-list.txt
+      - name: Full CTest
+        run: ctest --test-dir build-a1a21 --output-on-failure
+      - name: Install sanity
+        run: |
+          cmake --install build-a1a21 --prefix "$PWD/stage"
+          test ! -e stage/include/detail/simulation_phase_profile.hpp
+          test ! -e stage/include/detail/simulation_diagnostics.hpp
+          ! grep -q 'SOAM_PHASE_PROFILE_ENABLED' stage/include/system_architecture.hpp
+          ! grep -q 'SimulationPhaseProfile' stage/include/system_architecture.hpp
+          ! grep -q 'getLastSimulationPhaseProfile' stage/include/system_architecture.hpp
+      - name: Structural invariants
+        run: |
+          grep -q 'SOAM_PHASE_PROFILE_ENABLED=\${profile_enabled}' CMakeLists.txt
+          grep -q 'SOAM_PHASE_PROFILE_ENABLED=1' CMakeLists.txt
+          grep -q 'struct SimulationPhaseProfile final' src/detail/simulation_phase_profile.hpp
+          test -z "$(git grep -n 'SimulationPhaseProfile' -- cmake/templates/system_architecture.hpp.in || true)"
+          test -z "$(git grep -n 'getLastSimulationPhaseProfile' -- cmake/templates/system_architecture.hpp.in src/system_architecture.cpp || true)"
