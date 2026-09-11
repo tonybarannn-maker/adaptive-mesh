@@ -28,9 +28,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Configure
-        run: cmake -S . -B build-profile -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF -DBUILD_BENCHMARKS=ON -DBUILD_EXAMPLES=OFF -DSOAM_WARNINGS_AS_ERRORS=ON
-      - name: Build profile target
-        run: cmake --build build-profile --target mesh_phase_profile mesh_benchmark mesh_benchmark_profile --parallel 2
+        run: cmake -S . -B build-profile -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DBUILD_BENCHMARKS=ON -DBUILD_EXAMPLES=OFF -DSOAM_WARNINGS_AS_ERRORS=ON
+      - name: Verify generated header identity
+        run: cmake -E compare_files "$PWD/build-profile/generated/normal/system_architecture.hpp" "$PWD/build-profile/generated/profile/system_architecture.hpp"
+      - name: Build profile targets
+        run: cmake --build build-profile --target mesh_phase_profile mesh_benchmark mesh_benchmark_profile profile_contract_tests --parallel 2
+      - name: Profile contract tests
+        run: ctest --test-dir build-profile -R '^run_profile_contract_tests$' --output-on-failure
       - name: Profile smoke
         run: ./build-profile/mesh_phase_profile 1 1
       - name: Normal/profile functional equivalence
