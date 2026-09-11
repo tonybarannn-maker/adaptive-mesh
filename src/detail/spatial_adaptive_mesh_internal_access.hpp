@@ -5,6 +5,23 @@
 namespace AdaptiveMesh::detail {
 
 class SpatialAdaptiveMeshInternalAccess final {
+    class BackendFactoryAccess abstract
+        : public ProductionTransitionEvaluationBackend {
+    public:
+        [[nodiscard]] static SnapshotCaptureResult snapshotFailure() noexcept {
+            return snapshotCaptureFailed();
+        }
+
+        [[nodiscard]] static ProductionDerivedDirection supportDirection(
+            const CoherentProductionTransitionSnapshot& snapshot) noexcept
+        {
+            const auto request = derivedRequest(
+                snapshot,
+                RequestedTransitionDirection::support);
+            return *request.direction();
+        }
+    };
+
 public:
 #if SOAM_PHASE_PROFILE_ENABLED
     [[nodiscard]] static SimulationPhaseProfile simulationProfile(
@@ -23,8 +40,8 @@ public:
             backend{*mesh.impl_};
         const auto resolution =
             backend.resolveCurrentRelationship({source, target});
-        const auto* relationship = resolution.relationship();
-        if (relationship == nullptr) return snapshotCaptureFailed();
+        const auto& relationship = resolution.relationship();
+        if (!relationship) return BackendFactoryAccess::snapshotFailure();
         return backend.captureSnapshot(*relationship);
     }
 
@@ -34,9 +51,7 @@ public:
     {
         SpatialAdaptiveMesh::Impl::LiveProductionTransitionEvaluationBackend
             backend{*mesh.impl_};
-        const ProductionDerivedDirection direction{
-            RequestedTransitionDirection::support,
-            snapshot.lineage()};
+        const auto direction = BackendFactoryAccess::supportDirection(snapshot);
         return backend.revalidate(snapshot, direction);
     }
 };
