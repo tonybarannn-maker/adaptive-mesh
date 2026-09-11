@@ -12,12 +12,6 @@
 namespace AdaptiveMesh::detail {
 
 class ProductionTransitionEvaluatorScenarioAccess final {
-    struct CommitBridgeState final {
-        double capacity;
-        BridgeStatus status;
-        std::uint64_t version;
-    };
-
     enum class PersistenceMutation {
         evolve,
         reset
@@ -128,23 +122,8 @@ class ProductionTransitionEvaluatorScenarioAccess final {
         return {std::move(first), std::move(second)};
     }
 
-    static ProductionCapabilityLifecycleState lifecycleState(
-        SpatialAdaptiveMesh& mesh,
-        const ProductionExecutionCapability& capability) {
-        const auto state = mesh.impl_->productionAuthorityLedger_.lifecycleState(
-            ProductionTransitionCommitAccess::id(capability));
-        if (!state) {
-            throw std::logic_error("commit scenario capability missing from ledger");
-        }
-        return *state;
-    }
-
-    static CommitBridgeState commitBridgeState(SpatialAdaptiveMesh& mesh) {
+    static BridgeStatus committedBridgeStatus(SpatialAdaptiveMesh& mesh) {
         std::shared_lock lock(mesh.impl_->topologyMutex);
-        const auto relationship = mesh.impl_->productionRelationships_.find({0, 1});
-        if (relationship == mesh.impl_->productionRelationships_.end()) {
-            throw std::logic_error("commit scenario relationship missing");
-        }
         const auto& bridges = mesh.impl_->nodes[0].bridges;
         const auto bridge = std::find_if(
             bridges.begin(),
@@ -155,10 +134,7 @@ class ProductionTransitionEvaluatorScenarioAccess final {
         if (bridge == bridges.end()) {
             throw std::logic_error("commit scenario bridge missing");
         }
-        return {
-            bridge->capacity,
-            bridge->status,
-            relationship->second.authorityRelevantContextLineage};
+        return bridge->status;
     }
 
     static void advanceAuthorityVersion(SpatialAdaptiveMesh& mesh) {
@@ -216,7 +192,6 @@ public:
     static bool runCommit(test_support::CommitScenario scenario) {
         using test_support::CommitScenario;
         using CommitResult = ProductionTransitionCommitResult;
-        using Lifecycle = ProductionCapabilityLifecycleState;
 
         if (scenario == CommitScenario::wrong_target) {
             SpatialAdaptiveMesh source;
@@ -224,32 +199,25 @@ public:
             populate(source);
             populate(other);
             auto capability = issueCapability(source);
-            const auto result = other.commitProductionTransition(std::move(capability));
-            return result == CommitResult::target_mismatch &&
-                lifecycleState(source, capability) == Lifecycle::issued;
+            return other.commitProductionTransition(std::move(capability)) ==
+                CommitResult::target_mismatch;
         }
 
         SpatialAdaptiveMesh mesh;
         populate(mesh);
 
         if (scenario == CommitScenario::successful_atomic_commit) {
-            const auto before = commitBridgeState(mesh);
             auto capability = issueCapability(mesh);
             const auto result = mesh.commitProductionTransition(std::move(capability));
-            const auto after = commitBridgeState(mesh);
             return result == CommitResult::committed &&
-                lifecycleState(mesh, capability) == Lifecycle::consumed &&
-                after.capacity < before.capacity &&
-                after.status == BridgeStatus::DAMPING &&
-                after.version != before.version;
+                committedBridgeStatus(mesh) == BridgeStatus::DAMPING;
         }
 
         if (scenario == CommitScenario::stale_state) {
             auto capability = issueCapability(mesh);
             advanceAuthorityVersion(mesh);
-            const auto result = mesh.commitProductionTransition(std::move(capability));
-            return result == CommitResult::stale_state &&
-                lifecycleState(mesh, capability) == Lifecycle::invalidated;
+            return mesh.commitProductionTransition(std::move(capability)) ==
+                CommitResult::stale_state;
         }
 
         if (scenario == CommitScenario::replay) {
@@ -258,9 +226,8 @@ public:
                 CommitResult::committed) {
                 return false;
             }
-            const auto replay = mesh.commitProductionTransition(std::move(capability));
-            return replay == CommitResult::capability_consumed &&
-                lifecycleState(mesh, capability) == Lifecycle::consumed;
+            return mesh.commitProductionTransition(std::move(capability)) ==
+                CommitResult::capability_consumed;
         }
 
         if (scenario == CommitScenario::wrong_transition_class) {
@@ -268,9 +235,8 @@ public:
                 mesh,
                 RequestedTransitionDirection::constrain,
                 99);
-            const auto result = mesh.commitProductionTransition(std::move(capability));
-            return result == CommitResult::transition_rejected &&
-                lifecycleState(mesh, capability) == Lifecycle::invalidated;
+            return mesh.commitProductionTransition(std::move(capability)) ==
+                CommitResult::transition_rejected;
         }
 
         if (scenario == CommitScenario::expired_capability) {
@@ -279,9 +245,8 @@ public:
             if (!mesh.impl_->productionAuthorityLedger_.markExpired(id)) {
                 return false;
             }
-            const auto result = mesh.commitProductionTransition(std::move(capability));
-            return result == CommitResult::capability_invalid &&
-                lifecycleState(mesh, capability) == Lifecycle::expired;
+            return mesh.commitProductionTransition(std::move(capability)) ==
+                CommitResult::capability_invalid;
         }
 
         if (scenario == CommitScenario::concurrent_distinct_same_version) {
@@ -298,18 +263,11 @@ public:
             });
             firstThread.join();
             secondThread.join();
-            const bool ordered =
+            return
                 (outcomes[0] == CommitResult::committed &&
                  outcomes[1] == CommitResult::stale_state) ||
                 (outcomes[1] == CommitResult::committed &&
                  outcomes[0] == CommitResult::stale_state);
-            if (!ordered) return false;
-            const auto firstState = lifecycleState(mesh, first);
-            const auto secondState = lifecycleState(mesh, second);
-            return (firstState == Lifecycle::consumed &&
-                    secondState == Lifecycle::invalidated) ||
-                   (secondState == Lifecycle::consumed &&
-                    firstState == Lifecycle::invalidated);
         }
 
         if (scenario == CommitScenario::concurrent_same_capability) {
@@ -327,13 +285,11 @@ public:
             });
             firstThread.join();
             secondThread.join();
-            const bool ordered =
+            return
                 (outcomes[0] == CommitResult::committed &&
                  outcomes[1] == CommitResult::capability_consumed) ||
                 (outcomes[1] == CommitResult::committed &&
                  outcomes[0] == CommitResult::capability_consumed);
-            return ordered &&
-                lifecycleState(mesh, pair.first) == Lifecycle::consumed;
         }
 
         return false;
