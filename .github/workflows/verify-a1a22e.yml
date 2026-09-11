@@ -1,0 +1,49 @@
+name: Verify A.1a-2.2e exact SHA
+
+on:
+  push:
+    branches: [verification/a1a22e-33095751]
+
+jobs:
+  verify-exact-sha:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact A.1a-2.2e SHA
+        uses: actions/checkout@v4
+        with:
+          ref: 3309575119ca2048e4343fefbd750d868ba57f4b
+          fetch-depth: 0
+      - name: Assert exact SHA and clean tree
+        run: |
+          test "$(git rev-parse HEAD)" = "3309575119ca2048e4343fefbd750d868ba57f4b"
+          git diff --exit-code
+          git diff --cached --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"
+      - name: Configure Release warnings-as-errors
+        run: cmake -S . -B build-a1a22e -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DBUILD_BENCHMARKS=ON -DBUILD_EXAMPLES=ON -DSOAM_WARNINGS_AS_ERRORS=ON
+      - name: Build all configured targets
+        run: cmake --build build-a1a22e --parallel 2
+      - name: Verify registered test count
+        run: |
+          ctest --test-dir build-a1a22e -N | tee build-a1a22e/ctest-list.txt
+          grep -q '^Total Tests: 27$' build-a1a22e/ctest-list.txt
+      - name: Commit scenario integration tests
+        run: ctest --test-dir build-a1a22e -R 'production_transition_commit_tests' --output-on-failure
+      - name: Full CTest
+        run: ctest --test-dir build-a1a22e --output-on-failure
+      - name: Install sanity
+        run: |
+          cmake --install build-a1a22e --prefix "$PWD/stage"
+          test ! -e stage/include/tests/support/production_transition_evaluator_live_scenarios.cpp
+          test ! -e stage/include/detail/spatial_adaptive_mesh_internal_access.hpp
+      - name: Structural bridge observation gates
+        run: |
+          FILE=tests/support/production_transition_evaluator_live_scenarios.cpp
+          test "$(grep -c 'committedBridgeStatus' "$FILE" || true)" = "0"
+          test "$(grep -o 'mesh\.impl_' "$FILE" | wc -l)" = "19"
+          grep -q 'CommitResult::committed' "$FILE"
+          test "$(grep -c 'static ProductionExecutionCapability issueCapability' "$FILE")" = "1"
+          test "$(grep -c 'issueSameIdentityPair' "$FILE")" = "2"
+          grep -q 'advanceAuthorityVersion' "$FILE"
+          grep -q 'CommitScenario::expired_capability' "$FILE"
+          test -z "$(git diff 88e93aed57444b58e57969d4ae28195fe66097de..HEAD -- src include cmake CMakeLists.txt)"
