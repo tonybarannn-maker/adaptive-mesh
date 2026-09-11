@@ -41,7 +41,7 @@ public:
     [[nodiscard]]
     ProductionAuthorityDerivationResult evaluate(
         const ProductionTransitionEligibilityDecision& eligibility,
-        const ProductionAuthorityContext& authorityContext) const noexcept;
+        const ProductionAuthorityContext& authorityContext) const;
 };
 
 } // namespace AdaptiveMesh
