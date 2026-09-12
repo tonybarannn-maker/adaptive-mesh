@@ -2,6 +2,8 @@
 #include "bridge_persistence.hpp"
 #include "detail/production_transition_evaluation_internal.hpp"
 #include "detail/spatial_adaptive_mesh_internal_access.hpp"
+#include "support/g0_p1_failpoint.hpp"
+#include "support/g0_p1_lifecycle_fingerprint.hpp"
 
 #include <cstdlib>
 
@@ -518,6 +520,69 @@ void testLiveD7DeterministicLostUpdateZeroMutation() {
     require(sameCoherentPublicationState(afterT2, afterT1));
 }
 
+void testG0P1DetachedPreparationFailurePreservesLiveFingerprint() {
+    for (const auto phase : {
+             test_support::D7PreparationFailurePhase::persistence_lineage,
+             test_support::D7PreparationFailurePhase::d7_publication_lineage}) {
+        SpatialAdaptiveMesh mesh;
+        addConnectedPair(mesh);
+        const auto before = test_support::captureG0P1LifecycleFingerprint(
+            mesh, 0, 1);
+
+        test_support::armD7PreparationFailure(phase);
+        bool failed = false;
+        try {
+            static_cast<void>(detail::SpatialAdaptiveMeshInternalAccess::prepareD7Publication(
+                mesh,
+                ProductionTransitionEvaluationLocator{0, 1},
+                detail::ProductionD7PublicationInput::authoritative(
+                    supportEvidence())));
+        } catch (const std::bad_alloc&) {
+            failed = true;
+        }
+        require(failed);
+
+        const auto after = test_support::captureG0P1LifecycleFingerprint(
+            mesh, 0, 1);
+        require(before == after);
+
+        auto recovery = detail::SpatialAdaptiveMeshInternalAccess::prepareD7Publication(
+            mesh,
+            ProductionTransitionEvaluationLocator{0, 1},
+            detail::ProductionD7PublicationInput::authoritative(supportEvidence()));
+        require(recovery.has_value());
+    }
+}
+
+void testG0P1StaleCommitPreservesCompleteFingerprint() {
+    SpatialAdaptiveMesh mesh;
+    addConnectedPair(mesh);
+    auto first = detail::SpatialAdaptiveMeshInternalAccess::prepareD7Publication(
+        mesh,
+        ProductionTransitionEvaluationLocator{0, 1},
+        detail::ProductionD7PublicationInput::authoritative(constrainEvidence()));
+    auto competing = detail::SpatialAdaptiveMeshInternalAccess::prepareD7Publication(
+        mesh,
+        ProductionTransitionEvaluationLocator{0, 1},
+        detail::ProductionD7PublicationInput::authoritative(supportEvidence()));
+    require(first.has_value());
+    require(competing.has_value());
+    require(
+        detail::SpatialAdaptiveMeshInternalAccess::commitD7Publication(
+            mesh, std::move(*competing)) ==
+        detail::ProductionD7PublicationCommitStatus::committed);
+
+    const auto beforeStale = test_support::captureG0P1LifecycleFingerprint(
+        mesh, 0, 1);
+    require(
+        detail::SpatialAdaptiveMeshInternalAccess::commitD7Publication(
+            mesh, std::move(*first)) ==
+        detail::ProductionD7PublicationCommitStatus::stale_acquisition);
+    const auto afterStale = test_support::captureG0P1LifecycleFingerprint(
+        mesh, 0, 1);
+    require(beforeStale == afterStale);
+}
+
 } // namespace
 
 int main() {
@@ -531,5 +596,7 @@ int main() {
     testLiveD7AuthoritativePublicationAdvancesLineage();
     testLiveD7UnavailablePendingMatrix();
     testLiveD7DeterministicLostUpdateZeroMutation();
+    testG0P1DetachedPreparationFailurePreservesLiveFingerprint();
+    testG0P1StaleCommitPreservesCompleteFingerprint();
     return EXIT_SUCCESS;
 }

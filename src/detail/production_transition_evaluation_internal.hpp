@@ -12,6 +12,10 @@
 #include <optional>
 #include <type_traits>
 
+#if defined(SOAM_G0P1_TEST)
+#include "g0_p1_failpoint.hpp"
+#endif
+
 namespace AdaptiveMesh::detail {
 
 class ProductionPersistenceAccess;
@@ -102,6 +106,10 @@ public:
 private:
     void publishDetached(ProductionD7PublicationStatus status) {
         status_ = status;
+#if defined(SOAM_G0P1_TEST)
+        test_support::failIfArmed(
+            test_support::D7PreparationFailurePhase::d7_publication_lineage);
+#endif
         lineage_.advance();
     }
 
@@ -843,7 +851,13 @@ public:
         ProductionPersistenceRecord& record,
         const BridgePolicyEvidence& evidence) {
         const auto result = evolve(record.persistence_, evidence);
-        if (result.completeStateChanged()) record.lineage_.advance();
+        if (result.completeStateChanged()) {
+#if defined(SOAM_G0P1_TEST)
+            test_support::failIfArmed(
+                test_support::D7PreparationFailurePhase::persistence_lineage);
+#endif
+            record.lineage_.advance();
+        }
         return result;
     }
 

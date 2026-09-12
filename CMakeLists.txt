@@ -101,6 +101,17 @@ if(BUILD_TESTS)
 
   soam_add_runtime(adaptive_mesh_scenario "${SOAM_SCENARIO_INCLUDE_DIR}" 0)
   set_target_properties(adaptive_mesh_scenario PROPERTIES EXCLUDE_FROM_ALL TRUE)
+  add_library(adaptive_mesh_g0_p1_test STATIC src/system_architecture.cpp)
+  target_link_libraries(adaptive_mesh_g0_p1_test PUBLIC adaptive_mesh_domain Threads::Threads)
+  target_compile_definitions(adaptive_mesh_g0_p1_test PRIVATE
+    SOAM_PHASE_PROFILE_ENABLED=0 SOAM_G0P1_TEST=1)
+  target_include_directories(adaptive_mesh_g0_p1_test BEFORE PUBLIC
+    ${SOAM_SCENARIO_INCLUDE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/include)
+  target_include_directories(adaptive_mesh_g0_p1_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/support)
+  set_target_properties(adaptive_mesh_g0_p1_test PROPERTIES EXCLUDE_FROM_ALL TRUE)
   add_library(adaptive_mesh_k12_scenario_support STATIC
     src/production_transition_evaluator.cpp
     src/production_transition_evaluator_live.cpp
@@ -126,8 +137,17 @@ if(BUILD_TESTS)
   soam_add_test(production_transition_eligibility_compile_tests tests/production_transition_eligibility_compile_tests.cpp adaptive_mesh_domain)
   soam_add_test(production_authority_ledger_tests tests/production_authority_ledger_tests.cpp adaptive_mesh)
   target_include_directories(production_authority_ledger_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-  soam_add_test(production_persistence_tests tests/production_persistence_tests.cpp adaptive_mesh)
-  target_include_directories(production_persistence_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  add_executable(production_persistence_tests
+    tests/production_persistence_tests.cpp
+    tests/support/g0_p1_lifecycle_fingerprint.cpp)
+  target_link_libraries(production_persistence_tests PRIVATE adaptive_mesh_g0_p1_test)
+  target_compile_definitions(production_persistence_tests PRIVATE SOAM_G0P1_TEST=1)
+  target_include_directories(production_persistence_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${SOAM_SCENARIO_INCLUDE_DIR})
+  add_test(NAME run_production_persistence_tests COMMAND production_persistence_tests)
   soam_add_test(production_transition_evaluator_tests tests/production_transition_evaluator_tests.cpp adaptive_mesh_k12_scenario_support)
   soam_add_test(production_transition_evaluator_compile_tests tests/production_transition_evaluator_compile_tests.cpp adaptive_mesh_domain)
   soam_add_test(production_transition_evaluator_live_binding_tests tests/production_transition_evaluator_live_binding_tests.cpp adaptive_mesh_k12_scenario_support)
